@@ -5,7 +5,6 @@
   <title>Realm of Shinobi: Tournament of Legends - PvP</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- Server config: change to wss/ngrok later -->
   <script>
   window.PVP_WS_ABS = "wss://ros-relay.onrender.com/ws";
 </script>
@@ -2156,7 +2155,7 @@ window.addEventListener('resize', resizePhaserToBattlefield);
   P.roundBuf = P.roundBuf || { mine:{}, opp:{}, host:{}, guest:{} };
   P.enabled  = P.enabled ?? false;
   P.ws       = P.ws ?? null;
-  P.url      = P.url ?? (window.PVP_WS_URL||'ws://localhost:8080');
+  P.url      = P.url ?? (window.PVP_WS_ABS||'ws://localhost:8080');
   P.meId     = P.meId ?? null;
   P.matchId  = P.matchId ?? null;
   P.roomId   = P.roomId ?? null;
@@ -2936,6 +2935,7 @@ window.addEventListener('load', ()=>{ if (PVP.phase!=='draft') mountRightPanel()
 </script>
 </body>
 </html>
+
 
 
 

@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- Server config: change to wss/ngrok later -->
-  <script>window.PVP_WS_URL = "ws://localhost:8080";</script>
+  <script>window.PVP_WS_URL = "wss://670bb7fb.ros-alpha1.pages.dev/";</script>
 
   <style>
     :root{
@@ -2200,7 +2200,12 @@ function connectWS(){
     return _wsOpenPromise || Promise.resolve();
   }
   _wsOpenPromise = new Promise((resolve)=>{
-    const ws = new WebSocket(PVP.url);
+    const RELAY_ORIGIN = 'wss://https://ros-relay.kreztproductions.workers.dev/'; // <-- change this
+
+// Build the room URL each time we connect (uses current PVP.roomId)
+const room = encodeURIComponent(PVP.roomId || 'lobby');
+PVP.url = `${RELAY_ORIGIN}/?room=${room}`;   // keep PVP.url updated for the rest of your code
+const ws = new WebSocket(PVP.url);
     PVP.ws = ws;
 
     ws.addEventListener('open', ()=>{

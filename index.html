@@ -6,8 +6,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- Server config: change to wss/ngrok later -->
-  <script>window.PVP_WS_URL  = "wss://ros-relay.onrender.com/ws";
- </script>
+  <script>
+  window.PVP_WS_ABS = "wss://ros-relay.onrender.com/ws";
+</script>
+
 
   <style>
     :root{
@@ -2934,6 +2936,7 @@ window.addEventListener('load', ()=>{ if (PVP.phase!=='draft') mountRightPanel()
 </script>
 </body>
 </html>
+
 
 
 

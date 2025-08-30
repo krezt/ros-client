@@ -6,8 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- Server config: change to wss/ngrok later -->
-  <script>window.PVP_WS_URL  = "wss://ros-relay.onrender.com";
-  window.PVP_WS_PATH = "/ws";</script>
+  <script>window.PVP_WS_URL  = "wss://ros-relay.onrender.com/ws";
+ </script>
 
   <style>
     :root{
@@ -2209,45 +2209,28 @@ function connectWS(){
   }
 
   _wsOpenPromise = new Promise((resolve)=>{
-    // Build the ABSOLUTE ws url (no client host prefix, no "/wss/" proxy path)
-    const relay = String(window.PVP_WS_URL || '').replace(/\/+$/, ''); // strip trailing slash
-    let   path  = String(window.PVP_WS_PATH || '/ws');
-    if (!path.startsWith('/')) path = '/' + path;
-
-    const room  = encodeURIComponent(PVP.roomId || 'lobby');
-    const url   = `${relay}${path}?room=${room}`;
-    console.log('[WS] connecting to', url);
+    const room = encodeURIComponent(PVP.roomId || 'lobby');
+    const url  = `${window.PVP_WS_ABS}?room=${room}`;
+    console.log('[WS] v3 connecting →', url);
 
     const ws = new WebSocket(url);
     PVP.ws = ws;
-    PVP.url = url; // optional: useful for debugging
 
     ws.addEventListener('open', ()=>{
       appendLog('[PvP] Connected to matchmaking.');
       ws.send(JSON.stringify({ kind:'hello', build:'ros-pvp-v1' }));
       if (PVP.myName) ws.send(JSON.stringify({ kind:'set_name', name:PVP.myName }));
-
-      // show lobby on idle
-      if (PVP.phase === 'idle') {
-        mountLobbyInField();
-        ws.send(JSON.stringify({ kind:'list_rooms' }));
-      }
-
-      // flush any queued messages
-      if (Array.isArray(PVP._outbox)){
-        for (const m of PVP._outbox) ws.send(JSON.stringify(m));
-        PVP._outbox.length = 0;
-      }
+      if (PVP.phase === 'idle') { mountLobbyInField(); ws.send(JSON.stringify({ kind:'list_rooms' })); }
+      if (Array.isArray(PVP._outbox)){ for (const m of PVP._outbox) ws.send(JSON.stringify(m)); PVP._outbox.length = 0; }
       if (PVP._wantQueue) ws.send(JSON.stringify({ kind:'queue' }));
-
       resolve();
     }, { once:true });
 
     ws.addEventListener('close', ()=>{
       appendLog('[PvP] Disconnected.');
-      PVP.enabled = false; PVP.phase = 'idle';
+      PVP.enabled=false; PVP.phase='idle';
       if (typeof mountRightPanel === 'function') mountRightPanel();
-      _wsOpenPromise = null;
+      _wsOpenPromise=null;
     });
 
     ws.addEventListener('error', (e)=>{
@@ -2264,7 +2247,6 @@ function connectWS(){
 
   return _wsOpenPromise;
 }
-
 
 
 /* ---------- Battle bootstrap after draft (force-rebuild HUD) ---------- */
@@ -2952,6 +2934,7 @@ window.addEventListener('load', ()=>{ if (PVP.phase!=='draft') mountRightPanel()
 </script>
 </body>
 </html>
+
 
 
 

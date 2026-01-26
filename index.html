@@ -4,13 +4,9 @@
   <meta charset="utf-8" />
   <title>Realm of Shinobi: Tournament of Legends - PvP</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-<script>
-  window.PVP_WS_ABS = "wss://ros-relay.onrender.com/ws";
-</script>
-  <script>
-  window.PVP_WS_ABS = "wss://ros-relay.onrender.com/ws";
-</script>
 
+  <!-- Server config: change to wss/ngrok later -->
+  <script>window.PVP_WS_URL = "wss://ros-relay.onrender.com/ws";</script>
 
   <style>
     :root{
@@ -2157,7 +2153,7 @@ window.addEventListener('resize', resizePhaserToBattlefield);
   P.roundBuf = P.roundBuf || { mine:{}, opp:{}, host:{}, guest:{} };
   P.enabled  = P.enabled ?? false;
   P.ws       = P.ws ?? null;
-  P.url      = P.url ?? (window.PVP_WS_ABS||'ws://localhost:8080');
+  P.url      = P.url ?? (window.PVP_WS_URL||'ws://localhost:8080');
   P.meId     = P.meId ?? null;
   P.matchId  = P.matchId ?? null;
   P.roomId   = P.roomId ?? null;
@@ -2205,35 +2201,65 @@ function send(msg){
 }
 
 let _wsOpenPromise = null;
-
 function connectWS(){
-  if (PVP.ws && (PVP.ws.readyState === WebSocket.OPEN || PVP.ws.readyState === WebSocket.CONNECTING)) {
+  if (PVP.ws && (PVP.ws.readyState === WebSocket.OPEN || PVP.ws.readyState === WebSocket.CONNECTING)){
     return _wsOpenPromise || Promise.resolve();
   }
+  _wsOpenPromise = new Promise((resolve)=>{
+    const roomId = PVP.roomId || 'lobby'; // your code already sets this on create/join
+    const RELAY_ORIGIN = 'wss://ros-relay.onrender.com/ws';
+    const RELAY_URL = RELAY_ORIGIN + '?room=' + encodeURIComponent(roomId);
 
-  _wsOpenPromise = new Promise((resolve) => {
-    const room = encodeURIComponent(PVP.roomId || 'lobby');
-
-    const base = String(window.PVP_WS_ABS || '').trim();
-    if (!/^wss?:\/\//i.test(base)) {
-      throw new Error('PVP_WS_ABS must be an absolute ws(s):// URL, got: ' + base);
-    }
-
-    const url  = `${base}?room=${room}`;
-    console.log('[WS] connecting →', url);
-
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(RELAY_URL);   // <— changed line
     PVP.ws = ws;
+    // …keep the rest of your connectWS() exactly as you have it…
 
-    ws.addEventListener('open',  () => resolve(), { once:true });
-    ws.addEventListener('close', () => { /* your existing handler */ });
-    ws.addEventListener('error', () => { /* your existing handler */ });
-    ws.addEventListener('message', (ev) => { /* your existing handler */ });
+
+    ws.addEventListener('open', ()=>{
+      appendLog('[PvP] Connected to matchmaking.');
+      ws.send(JSON.stringify({ kind:'hello', build:'ros-pvp-v1' }));
+
+      if (PVP.myName) ws.send(JSON.stringify({ kind:'set_name', name:PVP.myName }));
+
+      // show lobby on idle
+      if (PVP.phase === 'idle') {
+        mountLobbyInField();
+        ws.send(JSON.stringify({ kind:'list_rooms' }));
+      }
+
+      // flush queue
+      if (Array.isArray(PVP._outbox)){
+        for (const m of PVP._outbox) ws.send(JSON.stringify(m));
+        PVP._outbox.length = 0;
+      }
+      if (PVP._wantQueue) ws.send(JSON.stringify({ kind:'queue' }));
+      resolve();
+    }, { once:true });
+
+    ws.addEventListener('close', ()=>{
+      appendLog('[PvP] Disconnected.');
+      PVP.enabled=false; PVP.phase='idle';
+      mountRightPanel();
+      _wsOpenPromise=null;
+    });
+
+    ws.addEventListener('error', (e)=>{
+      appendLog('[PvP] Connection error.');
+      console.error(e);
+    });
+
+    ws.addEventListener('message', (ev) => {
+  try {
+    const msg = JSON.parse(ev.data);  // turn the text into an object
+    handleNet(msg);                   // send it to your handler
+  } catch (err) {
+    console.warn('Bad WS message:', ev.data, err);
+  }
+});
+
   });
-
   return _wsOpenPromise;
 }
-
 
 
 /* ---------- Battle bootstrap after draft (force-rebuild HUD) ---------- */
@@ -2921,12 +2947,6 @@ window.addEventListener('load', ()=>{ if (PVP.phase!=='draft') mountRightPanel()
 </script>
 </body>
 </html>
-
-
-
-
-
-
 
 
 

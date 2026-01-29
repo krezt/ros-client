@@ -362,19 +362,19 @@ const choice=(arr)=> arr[(rand()*arr.length)|0];
 
 /* ---------- config ---------- */
 const CONFIG = {
-  BASE_HP: 50, HP_PER_TGH: 20,
+  BASE_HP: 54, HP_PER_TGH: 23,
   ATK_PER_STR: 1.5, SDM_PER_INT: 1.5,
   DEF_FROM_TGH: 0.75, DEF_FROM_QKN: 0.75,
 
-  CC_BASE_MIN: 2, CC_BASE_MAX: 5, CC_SDM_PER_BONUS: 15, CC_MAX_CAP: 8,
-  CRIT_BASE: 0.10, CRIT_CAP: 0.40, CRIT_QKN_FACTOR: 0.005, CRIT_INT_FACTOR: 0.005,
+  CC_BASE_MIN: 2, CC_BASE_MAX: 4, CC_SDM_PER_BONUS: 15, CC_MAX_CAP: 6,
+  CRIT_BASE: 0.05, CRIT_CAP: 0.40, CRIT_QKN_FACTOR: 0.005, CRIT_INT_FACTOR: 0.005,
   DODGE_BASE: 0.025, DODGE_QKN_FACTOR: 0.0025, DODGE_CAP: 0.15,
 
   ARMOR_K: 0.025, DAMAGE_GLOBAL: 1.20,
 
-  SHRUG_BASE: 0.025, SHRUG_TGH_FACTOR: 0.0025,
+  SHRUG_BASE: 0.05, SHRUG_TGH_FACTOR: 0.0025,
 
-  BUFF_BASE_MIN: 2, BUFF_BASE_MAX: 7, BUFF_SDM_PER_BONUS: 15, BUFF_MAX_CAP: 9,
+  BUFF_BASE_MIN: 2, BUFF_BASE_MAX: 5, BUFF_SDM_PER_BONUS: 15, BUFF_MAX_CAP: 7,
 
   PROC: {
     Cleric: { chance: 0.5 }, Mage: { chance: 0.5 }, Monk: { chance: 0.6 },
@@ -384,7 +384,7 @@ const CONFIG = {
   STACKS: { atk_up:{per:0.5,max:4}, sdm_up:{per:0.5,max:4}, def_up:{per:0.33,max:4}, def_down:{per:0.25,max:4} },
 
   MARKED_MULT: 2.0,
-  ECHO_MULT: 1.20,
+  ECHO_MULT: 1.25,
   SHIELDWALL_GUARD: 0.35,
   COUNTER_COEF: 0.30,
   STATCOEF_OVERRIDE: 1.0, // keep 1.0 to simplify tuning
@@ -481,16 +481,16 @@ __setWithVariants('mag',  'Premonition',   {proc:false});  // status only; type 
 /* ---------- jobs & stats ---------- */
 const ALL_CLASSES = ['Warrior','Barbarian','Rogue','Cleric','Mage','Paladin','Archer','Monk','Necromancer','Mystic'];
 const JOBS = {
-  Warrior:  { STR:26,QKN:16,INT:8, TGH:34, kind:'phys', name:'Warrior' },
-  Rogue:    { STR:22,QKN:30,INT:8,TGH:25,  kind:'phys', name:'Rogue' },
-  Cleric:   { STR:7, QKN:18,INT:28,TGH:27, kind:'mag',  name:'Cleric' },
-  Barbarian:{ STR:33,QKN:12, INT:7,TGH:32, kind:'phys', name:'Barbarian' },
-  Mage:     { STR:8, QKN:14,INT:35,TGH:25, kind:'mag',  name:'Mage' },
-  Paladin:  { STR:24,QKN:12,INT:16,TGH:28, kind:'phys', name:'Paladin' },
-  Archer:   { STR:22,QKN:27,INT:8, TGH:23, kind:'phys', name:'Archer' },
-  Monk:     { STR:24,QKN:28,INT:8, TGH:23, kind:'phys', name:'Monk' },
-  Necromancer:{STR:7,QKN:14, INT:34,TGH:25, kind:'mag',  name:'Necromancer' },
-  Mystic:   { STR:8, QKN:19,INT:31,TGH:22, kind:'mag',  name:'Mystic' }
+  Warrior:  { STR:26,QKN:16,INT:8, TGH:36, kind:'phys', name:'Warrior' },
+  Rogue:    { STR:22,QKN:30,INT:8,TGH:27,  kind:'phys', name:'Rogue' },
+  Cleric:   { STR:7, QKN:18,INT:28,TGH:29, kind:'mag',  name:'Cleric' },
+  Barbarian:{ STR:33,QKN:12, INT:7,TGH:34, kind:'phys', name:'Barbarian' },
+  Mage:     { STR:8, QKN:14,INT:35,TGH:27, kind:'mag',  name:'Mage' },
+  Paladin:  { STR:24,QKN:12,INT:16,TGH:30, kind:'phys', name:'Paladin' },
+  Archer:   { STR:22,QKN:25,INT:8, TGH:26, kind:'phys', name:'Archer' },
+  Monk:     { STR:24,QKN:28,INT:8, TGH:25, kind:'phys', name:'Monk' },
+  Necromancer:{STR:7,QKN:14, INT:34,TGH:27, kind:'mag',  name:'Necromancer' },
+  Mystic:   { STR:8, QKN:19,INT:31,TGH:24, kind:'mag',  name:'Mystic' }
 };
 function deriveStats(job){
   const HP  = CONFIG.BASE_HP + job.TGH*CONFIG.HP_PER_TGH;
@@ -544,7 +544,7 @@ function abilitiesFor(u){
     /* ===== Warrior ===== */
 case 'Warrior': return [
   {label:'Attack', desc:'Good old sword and board.', speed:'normal', type:'phys', target:'enemy',
-   base:{min:40,max:55}, statCoef:0.35, isBasic:true,
+   base:{min:45,max:75}, statCoef:0.35, isBasic:true,
    use:function(a,t){ return hit(a,t,{ability:this}); } },
 
   {label:'Warhorn', desc:'Heal and briefly bolster yourself with strength and ability quickness.',
@@ -569,7 +569,7 @@ case 'Warrior': return [
      appendLog(`${a.name} sounds the Warhorn and surges with a burst of strength and quickness. ${a.name} is healed for ${a.hp - before}.`);
    }}, // <-- important comma here
 
-  {label:'Power Strike', desc:'Slow, heavy blow.', speed:'slow', type:'phys', target:'enemy',
+  {label:'Power Strike', desc:'Slow, potentially heavy blow.', speed:'slow', type:'phys', target:'enemy',
    base:{min:40,max:120}, statCoef:0.60,
    use:function(a,t){ return hit(a,t,{ability:this}); } },
 
@@ -599,11 +599,11 @@ case 'Warrior': return [
     /* ===== Barbarian ===== */
     case 'Barbarian': return [
       {label:'Attack', desc:'A consistently strong basic attack.', speed:'normal', type:'phys', target:'enemy',
-       base:{min:60,max:65}, statCoef:0.40, isBasic:true,
+       base:{min:65,max:75}, statCoef:0.40, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Rend', desc:'Expose your target’s weakness.', speed:'slow', type:'phys', target:'enemy',
-       base:{min:40,max:90}, statCoef:0.35,
+       base:{min:60,max:90}, statCoef:0.35,
        use:function(a,t){ const r=hit(a,t,{ability:this});
          if(t.alive()){ const dur=buffDurBySDM(a); pushStatus(t,{key:'def_down', dur}); appendLog(`${t.name}’s defense is lowered (${dur}).`);} return r; } },
 
@@ -614,12 +614,12 @@ case 'Warrior': return [
          appendLog(`All enemies’ defense is reduced (${dur}).`); } },
 
       {label:'Smash', desc:'Crushing blow with chance to stun.', speed:'slow', type:'phys', target:'enemy',
-       base:{min:30,max:90}, statCoef:0.55,
+       base:{min:50,max:90}, statCoef:0.55,
        use:function(a,t){ const r=hit(a,t,{ability:this}); if(t.alive() && rand()<0.25){ const dur=ccDurBySDM(a);
          applyStatusWithLog(t,'stun',dur,'#b084ff',`${t.name} is stunned for {dur} rounds!`);} return r; } },
 
       {label:'Rampage', desc:'Swing that grants rampage on killshot.', speed:'normal', type:'phys', target:'enemy',
-       base:{min:50,max:100}, statCoef:0.45,
+       base:{min:50,max:110}, statCoef:0.45,
        use:function(a,t){
          const hpBefore = t.hp;
          const r = hit(a,t,{ability:this});
@@ -635,11 +635,11 @@ case 'Warrior': return [
     /* ===== Rogue ===== */
     case 'Rogue': return [
       {label:'Backstab', desc:'Go for the vitals.', speed:'slow', type:'phys', target:'enemy',
-       base:{min:60,max:90}, statCoef:0.40, critBonus:0.75,
+       base:{min:60,max:90}, statCoef:0.40, critBonus:0.95,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Attack', desc:'Hard slice at your enemy.', speed:'fast', type:'phys', target:'enemy',
-       base:{min:45,max:50}, statCoef:0.45, isBasic:true,
+       base:{min:30,max:70}, statCoef:0.45, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Poison Dagger', desc:'Cover your blade with poison for this attack.', speed:'normal', type:'phys', target:'enemy',
@@ -663,12 +663,28 @@ case 'Warrior': return [
          return r;
        }},
 
-      {label:'Smoke Bomb', desc:'Blind all enemies this round.', speed:'fast', type:'phys', target:'all-enemies',
-       use:(a,arr)=>{
-         let n = 0;
-         for (const t of arr){ if (!t.alive()) continue; pushStatus(t,{key:'blind', dur:1}); n++; }
-         appendLogHTML(`${a.name} throws <b>Smoke Bomb</b>! ${n} enemies are blinded this round.`);
-       }}
+     {label:'Smoke Bomb', desc:'Blind all enemies this round and heal for 15% of max HP.', speed:'fast', type:'phys', target:'all-enemies',
+  use:(a,arr)=>{
+    // blind enemies
+    let n = 0;
+    for (const t of arr){
+      if (!t.alive()) continue;
+      pushStatus(t,{key:'blind', dur:1});
+      n++;
+    }
+
+    // heal self for 15% of max HP
+    const healAmt = Math.max(1, Math.floor(a.maxHP * 0.15));
+    const before  = a.hp;
+    a.hp = clamp(a.hp + healAmt, 0, a.maxHP);
+    const healed = a.hp - before;
+    a._refresh && a._refresh();
+    checkHPWarnings(a);
+
+    appendLogHTML(`${a.name} throws <b>Smoke Bomb</b>! ${n} enemies are blinded this round. ${a.name} recovers ${healed} HP.`);
+  }
+}
+
     ];
 
     /* ===== Cleric ===== */
@@ -681,7 +697,7 @@ case 'Cleric': return [
     use: (a, t) => {
       const dur = buffDurBySDM(a);
       pushStatus(t, { key: 'def_up', dur });
-      const H = computeAbilityHeal(a, t, { heal: { min: 15, max: 30 }, healCoef: 0.25, scalesWith: 'SDM', type: 'mag' });
+      const H = computeAbilityHeal(a, t, { heal: { min: 25, max: 45 }, healCoef: 0.25, scalesWith: 'SDM', type: 'mag' });
       const before = t.hp;
       t.hp = clamp(t.hp + H, 0, t.maxHP);
       const healed = t.hp - before;
@@ -694,7 +710,7 @@ case 'Cleric': return [
     label: 'Attack',
     desc: 'Basic strike with a holy mace.',
     speed: 'normal', type: 'phys', target: 'enemy',
-    base: { min: 10, max: 18 }, statCoef: 0.75, isBasic: true,
+    base: { min: 10, max: 20 }, statCoef: 0.75, isBasic: true,
     use: function(a, t){ return hit(a, t, { ability: this }); }
   },
 
@@ -706,7 +722,7 @@ case 'Cleric': return [
     use: (a, arr) => {
       for (const ally of arr){
         if (!ally.alive()) continue;
-        const H = computeAbilityHeal(a, ally, { heal:{ min:15, max:45 }, healCoef:0.40, scalesWith:'SDM', type:'mag' });
+        const H = computeAbilityHeal(a, ally, { heal:{ min:25, max:55 }, healCoef:0.40, scalesWith:'SDM', type:'mag' });
         const before = ally.hp;
         ally.hp = clamp(ally.hp + H, 0, ally.maxHP);
         removeStatusKey(ally, 'poison');
@@ -720,7 +736,7 @@ case 'Cleric': return [
     label: 'Piercing Light',
     desc: 'Holy bolt that pierces defense.',
     speed: 'slow', type: 'mag', target: 'enemy',
-    base: { min: 35, max: 70 }, statCoef: 0.55, defPen: 0.25,
+    base: { min: 40, max: 70 }, statCoef: 0.55, defPen: 0.25,
     use: function(a, t){ return hit(a, t, { ability: this }); }
   },
 
@@ -823,7 +839,7 @@ case 'Cleric': return [
 }},
 
       {label:'Attack', desc:'Loose a quick arrow.', speed:'fast', type:'phys', target:'enemy',
-       base:{min:35,max:50}, statCoef:0.40, isBasic:true,
+       base:{min:45,max:55}, statCoef:0.40, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Volley', desc:'Rain arrows over the battlefield.', speed:'normal', type:'phys', target:'all-enemies',
@@ -831,7 +847,7 @@ case 'Cleric': return [
        use:function(a,arr){ for(const t of arr){ if(!t.alive()) continue; hit(a,t,{ability:this}); } } },
 
       {label:'Snipe', desc:'Take careful aim for the vitals.', speed:'slow', type:'phys', target:'enemy',
-       base:{min:40,max:150}, statCoef:0.65, critBonus:0.30,
+       base:{min:60,max:150}, statCoef:0.65, critBonus:0.30,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:`Hunter's Mark`, desc:'Target takes increased damage until end of next round.', speed:'normal', type:'phys', target:'enemy',
@@ -844,7 +860,7 @@ case 'Cleric': return [
     /* ===== Monk ===== */
     case 'Monk': return [
       {label:'Flurry', desc:'Three successive strikes.', speed:'normal', type:'phys', target:'enemy',
-       base:{min:25,max:40}, statCoef:0.25,
+       base:{min:15,max:65}, statCoef:0.25,
        use:function(a,t){ for(let i=1;i<=3;i++){ if(!t.alive()) break;
          a._usingAbilityLabel = `Flurry (${i}/3)`; hit(a,t,{ability:this}); a._usingAbilityLabel = undefined; } } },
 
@@ -1234,7 +1250,7 @@ function updateStatusView(u){
 /* ---------- end-of-round ticks & shrug ---------- */
 const SHRUG_MESSAGES={ poison:(u)=>`${u.name} shrugs off the poison like it was nothing!`, stun:(u)=>`${u.name} snaps out of it and is no longer stunned!`, blind:(u)=>`${u.name} regains vision!`, berserk:(u)=>`${u.name}'s bloodlust wears off!`, def_down:(u)=>`${u.name} feels less vulnerable to attacks!` };
 function tryShrug(u,key){
-  const tgh=JOBS[u.job].TGH; const p=(CONFIG.SHRUG_BASE??0.045)+tgh*(CONFIG.SHRUG_TGH_FACTOR??0.005);
+  const tgh=JOBS[u.job].TGH; const p=(CONFIG.SHRUG_BASE??0.05)+tgh*(CONFIG.SHRUG_TGH_FACTOR??0.005);
   if(chance(p)){ const before=u.status.length; u.status=u.status.filter(s=>s.key!==key);
     if(u.status.length!==before){ const msgFn=SHRUG_MESSAGES[key]; if(msgFn) appendLog(msgFn(u)); updateStatusView(u); }
     return true;

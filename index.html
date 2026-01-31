@@ -385,14 +385,14 @@ const CONFIG = {
 
   MARKED_MULT: 2.0,
   ECHO_MULT: 1.25,
-  SHIELDWALL_GUARD: 0.35,
+  SHIELDWALL_GUARD: 0.15,
   COUNTER_COEF: 0.30,
   STATCOEF_OVERRIDE: 1.0, // keep 1.0 to simplify tuning
   NO_GLOBAL_MULT: true,
   IGNORE_DEFPEN: false
 };
 
-window.STATUS_ICON_SIZE = 32;   // try 28, 32, 36
+window.STATUS_ICON_SIZE = 36;   // try 28, 32, 36
 
 
 /* ---------- ability type overrides ---------- */
@@ -493,7 +493,7 @@ const JOBS = {
   Archer:   { STR:22,QKN:25,INT:8, TGH:26, kind:'phys', name:'Archer' },
   Monk:     { STR:24,QKN:28,INT:8, TGH:25, kind:'phys', name:'Monk' },
   Necromancer:{STR:7,QKN:14, INT:34,TGH:27, kind:'mag',  name:'Necromancer' },
-  Mystic:   { STR:8, QKN:19,INT:31,TGH:24, kind:'mag',  name:'Mystic' }
+  Mystic:   { STR:8, QKN:26,INT:31,TGH:24, kind:'mag',  name:'Mystic' }
 };
 function deriveStats(job){
   const HP  = CONFIG.BASE_HP + job.TGH*CONFIG.HP_PER_TGH;
@@ -591,7 +591,7 @@ case 'Warrior': return [
   {label:'Shieldwall', desc:'Allies gain mitigation; intercept first hit.', speed:'fast', type:'phys', target:'all-allies',
    use:(a,arr)=>{
      for (const ally of arr){
-       pushStatus(ally, { key:'guard', dur:1, data:{ pct:(CONFIG.SHIELDWALL_GUARD||0.35) }});
+       pushStatus(ally, { key:'guard', dur:1, data:{ pct:(CONFIG.SHIELDWALL_GUARD||0.15) }});
      }
      pushStatus(a, { key:'shield_redirect', dur:1, data:{ remaining:1 }});
      appendLogHTML(`${a.name} raises <b>Shieldwall</b> to protect the team!`);
@@ -862,8 +862,8 @@ case 'Cleric': return [
 
     /* ===== Monk ===== */
     case 'Monk': return [
-      {label:'Flurry', desc:'Three successive strikes.', speed:'normal', type:'phys', target:'enemy',
-       base:{min:15,max:65}, statCoef:0.25,
+      {label:'Flurry', desc:'Three successive strikes.', speed:'slow', type:'phys', target:'enemy',
+       base:{min:30,max:65}, statCoef:0.25,
        use:function(a,t){ for(let i=1;i<=3;i++){ if(!t.alive()) break;
          a._usingAbilityLabel = `Flurry (${i}/3)`; hit(a,t,{ability:this}); a._usingAbilityLabel = undefined; } } },
 
@@ -871,7 +871,7 @@ case 'Cleric': return [
        base:{min:40,max:50}, statCoef:0.40, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
-      {label:'Chi Wave', desc:'Cleanse CC/debuffs from all allies.', speed:'normal', type:'mag', target:'all-allies',
+      {label:'Chi Wave', desc:'Cleanse CC/debuffs from all allies.', speed:'fast', type:'mag', target:'all-allies',
        use:(a,arr)=>{ let count=0; for(const ally of arr){ if(!ally.alive()) continue;
          if(cleanseCCAndDebuffs(ally)) count++; updateStatusView(ally); }
          appendLog(count ? `A Chi Wave rips accross the battlefield. Negative effects washed away from ${count} allies.` : `No negative effects to cleanse.`); } },
@@ -1011,6 +1011,122 @@ case 'Cleric': return [
   }
 }
 
+/* =========================
+   VFX (COSMETIC ONLY)
+   - No rand()
+   - No game-state changes
+   ========================= */
+
+function getScene(){
+  return (sceneRef && sceneRef.add) ? sceneRef : null;
+}
+
+function panelCenterWorld(u){
+  // Uses the unit panel container position (which is in the scene)
+  // and returns an approximate center point for projectiles/text.
+  if (!u?._ui?.panel) return null;
+  const p = u._ui.panel;
+  const scene = u._ui.scene || getScene();
+  if (!scene) return null;
+
+  // Container origin is top-left of panel
+  const x = p.x + (scene.PANEL_W || 380) * 0.5;
+  const y = p.y + (scene.PANEL_H || 120) * 0.35; // slightly above center feels better
+  return { x, y };
+}
+
+function vfxFlashPanel(u, { ms=120 } = {}){
+  const scene = getScene();
+  const panel = u?._ui?.panel;
+  if (!scene || !panel) return;
+
+  // quick white flash via alpha pulse
+  scene.tweens.add({
+    targets: panel,
+    alpha: { from: 1, to: 0.35 },
+    duration: ms,
+    yoyo: true,
+    ease: 'Quad.easeOut'
+  });
+}
+
+function vfxShakePanel(u, { px=6, ms=120 } = {}){
+  const scene = getScene();
+  const panel = u?._ui?.panel;
+  if (!scene || !panel) return;
+
+  const x0 = panel.x, y0 = panel.y;
+  scene.tweens.add({
+    targets: panel,
+    x: x0 + px,
+    y: y0,
+    duration: ms,
+    yoyo: true,
+    repeat: 2,
+    ease: 'Sine.easeInOut',
+    onComplete: () => { panel.x = x0; panel.y = y0; }
+  });
+}
+
+function vfxFloatText(u, text, { ms=650, fontSize=20 } = {}){
+  const scene = getScene();
+  const pos = panelCenterWorld(u);
+  if (!scene || !pos) return;
+
+  const t = scene.add.text(pos.x, pos.y, text, {
+    fontFamily: 'monospace',
+    fontSize: `${fontSize}px`,
+    fontStyle: 'bold',
+    color: '#ffffff',
+    stroke: '#000000',
+    strokeThickness: 4
+  }).setOrigin(0.5, 0.5).setDepth(9999);
+
+  scene.tweens.add({
+    targets: t,
+    y: pos.y - 26,
+    alpha: 0,
+    duration: ms,
+    ease: 'Quad.easeOut',
+    onComplete: () => t.destroy()
+  });
+}
+
+function vfxProjectile(a, t, { key=null, ms=260 } = {}){
+  const scene = getScene();
+  const from = panelCenterWorld(a);
+  const to   = panelCenterWorld(t);
+  if (!scene || !from || !to) return;
+
+  // Minimal “dot projectile” using a circle Graphics (no assets required)
+  const g = scene.add.graphics().setDepth(9998);
+  g.fillStyle(0xffffff, 1);
+  g.fillCircle(0, 0, 5);
+  g.x = from.x; g.y = from.y;
+
+  scene.tweens.add({
+    targets: g,
+    x: to.x,
+    y: to.y,
+    duration: ms,
+    ease: 'Quad.easeInOut',
+    onComplete: () => g.destroy()
+  });
+}
+
+// Optional: call once to animate KO a little
+function vfxKO(u){
+  const scene = getScene();
+  const panel = u?._ui?.panel;
+  if (!scene || !panel) return;
+  scene.tweens.add({
+    targets: panel,
+    alpha: { from: panel.alpha, to: 0.55 },
+    duration: 120,
+    ease: 'Quad.easeOut'
+  });
+}
+
 /* ===== PART 2/4 — ENGINE HELPERS ===== */
 
 /* ---------- Status & stacking ---------- */
@@ -1082,11 +1198,14 @@ function applyStatusWithLog(target, statusKey, dur, colorHex, text){
 /* ---------- deterministic picks (no RNG before seeding) ---------- */
 function pickCanonical(arr){
   if (!arr || !arr.length) return null;
-  return [...arr].sort((a,b)=> (a.name||'').localeCompare(b.name||''))[0];
+  return [...arr].sort((a,b)=>{
+    const A = String(a.netId ?? '');
+    const B = String(b.netId ?? '');
+    return A < B ? -1 : (A > B ? 1 : 0);
+  })[0];
 }
-function pickDeterministic(arr){ // safe alias
-  return pickCanonical(arr);
-}
+function pickDeterministic(arr){ return pickCanonical(arr); }
+
 
 /* ---------- multipliers ---------- */
 function atkMult(u){ const cfg=CONFIG.STACKS?.atk_up||{per:0.30,max:4}; const n=Math.min(countStacks(u,'atk_up'),cfg.max); return Math.pow(1+cfg.per, n); }
@@ -1382,7 +1501,12 @@ function hit(a, t, opt={}, verb){
   const res = looksLikeAbility ? computeAbilityDamage(a,target,ability) : calcDamage(a,target,opt);
   const abilityName = (a._usingAbilityLabel || (verb ? verb : (ability ? ability.label : (opt.type==='mag'?'spell':'attack'))));
 
-  if (res.dodged){ appendLogHTML(`${target.name} <span style="color:skyblue">dodges</span> ${a.name}’s ${abilityName}!`); return {dealt:0,dodged:true,crit:false}; }
+  if (res.dodged){
+  vfxFlashPanel(a, { ms: 80 });
+  vfxFlashPanel(target, { ms: 80 });
+  appendLogHTML(`${target.name} <span style="color:skyblue">dodges</span> ${a.name}’s ${abilityName}!`);
+  return {dealt:0,dodged:true,crit:false};
+}
 
   let dmgToApply=res.dmg;
   if (a._echoing) dmgToApply = Math.floor(dmgToApply * (a._echoMult || CONFIG.ECHO_MULT || 1.05));
@@ -1401,6 +1525,14 @@ function hit(a, t, opt={}, verb){
   target._refresh && target._refresh();
   checkHPWarnings(target);
 
+// ---- VFX: impact (cosmetic only) ----
+if (dmgToApply > 0){
+  vfxProjectile(a, target);         // optional but feels great
+  vfxShakePanel(target, { px: 6 });
+  vfxFlashPanel(target, { ms: 110 });
+  vfxFloatText(target, `-${dmgToApply}`, { fontSize: res.crit ? 26 : 20 });
+}
+
   if (abilityName.toLowerCase()==='attack'){
     if (res.crit) appendLogHTML(`${a.name}’s attack lands a <span style="color:gold">critical strike</span>! ${target.name} takes ${dmgToApply} damage.`);
     else          appendLog(`${a.name} attacks ${target.name} for ${dmgToApply} damage.`);
@@ -1409,21 +1541,39 @@ function hit(a, t, opt={}, verb){
     else          appendLog(`${a.name} uses ${abilityName}. ${target.name} takes ${dmgToApply} damage.`);
   }
 
-  if (dmgToApply>0 && target.hp<=0){
+  // --- KO handling (one-time VFX per death, supports revive) ---
+if (dmgToApply > 0 && target.hp <= 0){
   appendLogHTML(`<span style="color:#ff6b6b">☠ ${target.name} is down!</span>`);
-  if (target._ui){ target._refresh && target._refresh(); } // draw KO X via _refresh
-}
 
-
-  if (ability?.isBasic && dmgToApply>0 && target.alive()){ maybeProcOnBasic(a,target); }
-
-  if (!opt._noCounter && target.alive() && a.alive() && hasStatus(target,'counter')){
-    const counter={label:'Counter', type:'phys', target:'enemy', base:{min:8,max:14}, scalesWith:'ATK', statCoef:(CONFIG.COUNTER_COEF||0.30)};
-    const oldLabel=target._usingAbilityLabel; target._usingAbilityLabel='Counter';
-    hit(target,a,{ability:counter,_noCounter:true,_noRedirect:true},'counterstrikes'); target._usingAbilityLabel=oldLabel;
+  // Only play KO VFX once per death event
+  if (!target._didKOVFX){
+    target._didKOVFX = true;
+    vfxKO(target);
   }
-  return {dealt:dmgToApply,dodged:false,crit:res.crit};
+
+  // draw KO X via _refresh
+  if (target._ui) target._refresh && target._refresh();
+} else {
+  // If they're alive, clear the KO-vfx latch so future deaths can animate again
+  if (target._didKOVFX) target._didKOVFX = false;
 }
+
+// Basic-attack proc (only if target survived)
+if (ability?.isBasic && dmgToApply > 0 && target.alive()){
+  maybeProcOnBasic(a, target);
+}
+
+// Counter
+if (!opt._noCounter && target.alive() && a.alive() && hasStatus(target,'counter')){
+  const counter = {label:'Counter', type:'phys', target:'enemy', base:{min:8,max:14}, scalesWith:'ATK', statCoef:(CONFIG.COUNTER_COEF||0.30)};
+  const oldLabel = target._usingAbilityLabel;
+  target._usingAbilityLabel = 'Counter';
+  hit(target, a, {ability:counter, _noCounter:true, _noRedirect:true}, 'counterstrikes');
+  target._usingAbilityLabel = oldLabel;
+}
+
+return {dealt:dmgToApply, dodged:false, crit:res.crit};
+
 
 /* ===== PART 3/4 — Parties, UI, Scene, Round ===== */
 

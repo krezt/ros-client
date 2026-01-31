@@ -396,15 +396,10 @@ window.STATUS_ICON_SIZE = 36;   // try 28, 32, 36
 
 
 /* ---------- ability type overrides ---------- */
-window.ABILITY_TYPE_OVERRIDES = window.ABILITY_TYPE_OVERRIDES || {};
-window.ABILITY_TYPE_OVERRIDES['Fireball'] = 'mag';
-window.ABILITY_TYPE_OVERRIDES['Shield Bash'] = 'phys';
-window.ABILITY_TYPE_OVERRIDES['Lightning Bolt (proc)'] = 'mag';
-window.ABILITY_TYPE_OVERRIDES['Life Drip (proc)']     = 'mag';
-
 // ---------- Ability damage-type overrides (mag vs phys) ----------
 // Safe init
 window.ABILITY_TYPE_OVERRIDES = window.ABILITY_TYPE_OVERRIDES || Object.create(null);
+
 
 // Helper: set many labels to a type at once
 function __setType(type, labels){
@@ -1018,7 +1013,7 @@ case 'Cleric': return [
    ========================= */
 
 function getScene(){
-  return (sceneRef && sceneRef.add) ? sceneRef : null;
+  return (typeof sceneRef !== 'undefined' && sceneRef && sceneRef.add) ? sceneRef : null;
 }
 
 function panelCenterWorld(u){
@@ -1573,6 +1568,7 @@ if (!opt._noCounter && target.alive() && a.alive() && hasStatus(target,'counter'
 }
 
 return {dealt:dmgToApply, dodged:false, crit:res.crit};
+}
 
 
 /* ===== PART 3/4 — Parties, UI, Scene, Round ===== */
@@ -2382,7 +2378,10 @@ window.addEventListener('load', ()=>{
   // ✅ ensure PVP exists and lobby mounts after boot
   if (window.PVP && (PVP.phase === 'idle' || !PVP.phase)) {
     PVP.phase = 'idle';
-    setTimeout(showLobby, 0);
+    setTimeout(() => {
+  if (typeof showLobby === 'function') showLobby();
+}, 0);
+
   }
 
   if ('ResizeObserver' in window){
@@ -2397,7 +2396,6 @@ window.addEventListener('load', ()=>{
 
 window.addEventListener('resize', resizePhaserToBattlefield);
 
-<!-- (continues same <script> tag) -->
 
 /* ---------- PvP bootstrap ---------- */
 (function bootstrapPVP(){
@@ -2757,11 +2755,15 @@ window.showEndOverlay = function(outcome){ // 'win' | 'lose' | 'draw'
 const toLobby = () => {
   ov.remove();
 
-  // Use your helper (already defined in your code)
+  // Always reset UI/state locally first
   returnToLobby();
 
-  // Refresh room list
-  connectWS().then(() => send({ kind:'list_rooms' }));
+  // If connected, refresh rooms; if not, connect then refresh
+  if (PVP.ws && PVP.ws.readyState === WebSocket.OPEN) {
+    send({ kind:'list_rooms' });
+  } else {
+    connectWS().then(() => send({ kind:'list_rooms' }));
+  }
 };
 
 const playAgain = () => {
@@ -3159,6 +3161,15 @@ function returnToLobby(){
   PVP.roomId = null;
   PVP.role = null;
   PVP._readyForBattle = false;
+PVP._ended = false;
+PVP._resolvingRound = null;
+PVP.sentForRound = null;
+ensureRoundBuf();
+PVP.roundBuf.mine = {};
+PVP.roundBuf.opp  = {};
+PVP.roundBuf.host = {};
+PVP.roundBuf.guest= {};
+
 
   // Clear units so Phaser panels don’t keep drawing old match
   player = [];
@@ -3244,6 +3255,10 @@ function mountLobbyInField(){
   ov.appendChild(list);
 
   root.appendChild(ov);
+
+// keep lobby UI consistent
+enterLobbyUI();
+setTopBarLobby();
 
   // Save name handlers
   const saveName = () => {

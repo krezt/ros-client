@@ -810,6 +810,12 @@ case 'Cleric': return [
     ally._refresh && ally._refresh();
     checkHPWarnings(ally);
 
+// --- COSMETIC ONLY: guaranteed visible heal feedback (no timing dependency) ---
+if (healed > 0){
+  vfxFlashColor?.(ally, { color: 0xa7ffb5, ms: 450, alpha: 0.18 });
+  vfxFloatText?.(ally, `+${healed}`, { ms: vfxMs(VFX?.FLOAT_MS ?? 1250), fontSize: Math.floor(vfxScale(22)) });
+}
+
     // --- COSMETIC ONLY: show +amount and "CURED" at impact timing ---
     try {
       const i = allies.indexOf(ally); // safe; allies is small (party size)
@@ -1403,29 +1409,37 @@ function getScene(){
 }
 
 function panelCenterWorld(u){
-  if (!u?._ui?.panel) return null;
-  const panel = u._ui.panel;
-  const scene = u._ui.scene || getScene();
+  if (!u) return null;
+
+  // --- Preferred: panel center (your current behavior) ---
+  const panel = u?._ui?.panel;
+  const scene = u?._ui?.scene || getScene();
   if (!scene) return null;
 
   const w = (scene.PANEL_W || 380);
   const h = (scene.PANEL_H || 120);
 
-  // Point you want inside the panel (local-to-panel)
-  const localX = w * 0.5;
-  const localY = h * 0.35;
+  if (panel){
+    const localX = w * 0.5;
+    const localY = h * 0.35;
 
-  // Convert panel-local point -> world point
-  // (works even when panel is inside other containers)
-  if (panel.getWorldTransformMatrix) {
-    const m = panel.getWorldTransformMatrix();
-    const out = { x: 0, y: 0 };
-    m.transformPoint(localX, localY, out);
-    return out;
+    if (panel.getWorldTransformMatrix) {
+      const m = panel.getWorldTransformMatrix();
+      const out = { x: 0, y: 0 };
+      m.transformPoint(localX, localY, out);
+      return out;
+    }
+    return { x: panel.x + localX, y: panel.y + localY };
   }
 
-  // Fallback (less accurate if nested containers)
-  return { x: panel.x + localX, y: panel.y + localY };
+  // --- Fallback: unit sprite/container position (COSMETIC ONLY) ---
+  // Adjust this to match how you store sprites:
+  const spr = u.sprite || u._sprite || u._ui?.sprite || null;
+  if (spr && Number.isFinite(spr.x) && Number.isFinite(spr.y)){
+    return { x: spr.x, y: spr.y };
+  }
+
+  return null;
 }
 
 function vfxShakePanel(u, { px=6, ms=160 } = {}){
@@ -1460,7 +1474,7 @@ function vfxFloatText(u, text, { ms=900, fontSize=22, color='#ffffff', stroke='#
 
   const t = scene.add.text(pos.x + dx, pos.y - stackOffset, text, {
     fontFamily: 'monospace',
-    fontSize: `${fontSize}px`,
+    fontSize: `${Math.floor(vfxScale(fontSize))}px`,
     fontStyle: 'bold',
     color,
     stroke,
@@ -1471,7 +1485,7 @@ function vfxFloatText(u, text, { ms=900, fontSize=22, color='#ffffff', stroke='#
     targets: t,
     y: t.y - rise,
     alpha: 0,
-    duration: ms,
+    duration: vfxMs(ms),
     ease: 'Quad.easeOut',
     onComplete: () => {
       t.destroy();
@@ -1484,7 +1498,13 @@ function vfxProjectile(a, t, { ms=260, color=0xffffff, radius=5 } = {}){
   const scene = getScene();
   const from = panelCenterWorld(a);
   const to   = panelCenterWorld(t);
-  if (!scene || !from || !to) return;
+
+  if (!scene) { console.warn('[vfxProjectile] no scene'); return; }
+  if (!from)  { console.warn('[vfxProjectile] no FROM for', a?.name || a); return; }
+  if (!to)    { console.warn('[vfxProjectile] no TO for', t?.name || t); return; }
+
+  // ... keep the rest exactly as you already have (including vfxMs/vfxScale if you added them)
+
 
   const g = scene.add.graphics()
     .setDepth(999998)     // just under float text
@@ -1675,17 +1695,52 @@ function everyoneInNetOrder(){
 }
 
 /* ---------- Poison engine ---------- */
+/* ---------- Poison engine ---------- */
 function addPoison(target, amount){
-  if (!target || amount<=0) return;
-  let st = target.status.find(s=>s.key==='poison');
-  if (!st){ st={ key:'poison', dur:9999, data:{ contributions:[] } }; target.status.push(st); }
-  const list = st.data.contributions || (st.data.contributions=[]);
-  list.push({ amt: Math.max(1, Math.floor(amount)) }); updateStatusView(target);
+  if (!target || amount <= 0) return;
+
+  let st = target.status.find(s => s.key === 'poison');
+  if (!st){
+    st = { key:'poison', dur:9999, data:{ contributions:[] } };
+    target.status.push(st);
+  }
+
+  const list = st.data.contributions || (st.data.contributions = []);
+  list.push({ amt: Math.max(1, Math.floor(amount)) });
+
+  updateStatusView(target);
 }
+
+// --- COSMETIC ONLY: make poison application always "green language" ---
+// IMPORTANT: this must be OUTSIDE addPoison so it runs once.
+if (typeof addPoison === 'function' && !addPoison._vfxWrapped){
+  const _addPoison = addPoison;
+
+  addPoison = function(target, amt){
+    const out = _addPoison(target, amt); // mechanics unchanged
+
+    try {
+      if (target && amt > 0){
+        vfxFlashColor?.(target, { color: 0x57ff7a, ms: 320, alpha: 0.24 });
+        vfxFloatText?.(target, `POISON +${Math.floor(amt)}`, {
+          ms: vfxMs(900),
+          fontSize: Math.floor(vfxScale(16)),
+          color: (VFX_COL?.poison || '#57ff7a')
+        });
+      }
+    } catch {}
+
+    return out;
+  };
+
+  addPoison._vfxWrapped = true;
+}
+
 function poisonTotal(u){
-  const st=u.status.find(s=>s.key==='poison'); const list=st?.data?.contributions;
-  if (!Array.isArray(list)||!list.length) return 0;
-  return list.reduce((s,c)=>s+(c.amt|0),0);
+  const st = u.status.find(s => s.key === 'poison');
+  const list = st?.data?.contributions;
+  if (!Array.isArray(list) || !list.length) return 0;
+  return list.reduce((s,c)=>s + (c.amt|0), 0);
 }
 
 /* ---------- durations & log helpers ---------- */

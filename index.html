@@ -394,6 +394,53 @@ const CONFIG = {
 
 window.STATUS_ICON_SIZE = 40;   // try 28, 32, 36
 
+function applyHeal(caster, target, healSpecOrAbility, {
+  label = 'Heal',
+  showVFX = true,
+  curePoison = false
+} = {}){
+  if (!target) return 0;
+
+  const H = computeAbilityHeal(caster, target, healSpecOrAbility);
+  const before = target.hp;
+
+  target.hp = clamp(target.hp + H, 0, target.maxHP);
+
+  // If we revived them elsewhere and they were at 0, your alive() may depend on hp>0.
+  // This function does NOT auto-revive; it only heals.
+
+  const healed = target.hp - before;
+
+  if (curePoison) removeStatusKey(target, 'poison');
+
+  target._refresh && target._refresh();
+  if (typeof checkHPWarnings === 'function') checkHPWarnings(target);
+
+  if (showVFX && healed > 0){
+    try {
+      // green pop + green tint
+      vfxFlashColor?.(target, { color: 0xa7ffb5, ms: 450, alpha: 0.16 });
+      vfxFloatText?.(target, `+${healed}`, { ms: (VFX?.FLOAT_MS ?? 1500), fontSize: 22 });
+    } catch {}
+  }
+
+  return healed;
+}
+
+function applyHealFlat(target, amount, { showVFX=true } = {}){
+  if (!target || amount<=0) return 0;
+  const before = target.hp;
+  target.hp = clamp(target.hp + amount, 0, target.maxHP);
+  const healed = target.hp - before;
+  target._refresh && target._refresh();
+  checkHPWarnings?.(target);
+
+  if (showVFX && healed > 0){
+    vfxFlashColor?.(target, { color: 0xa7ffb5, ms: 450, alpha: 0.16 });
+    vfxFloatText?.(target, `+${healed}`, { ms: (VFX?.FLOAT_MS ?? 1500), fontSize: 22 });
+  }
+  return healed;
+}
 
 /* ---------- ability type overrides ---------- */
 // ---------- Ability damage-type overrides (mag vs phys) ----------
@@ -1964,24 +2011,6 @@ function syncDeathState(u){
 }
 window.syncDeathState = syncDeathState;
 
-/* ---------- end-of-round ticks & shrug (canonical order) ---------- */
-function endRoundTick(){
-  const all = canonicalUnits();
-
-  for (const u of all){
-    if (!u.alive()) continue;
-
-    // Poison ticks
-    const p = u.status.find(s => s.key === 'poison');
-    if (p && Array.isArray(p.data?.contributions) && p.data.contributions.length){
-      const current = p.data.contributions.reduce((s,c)=>s+(c.amt||0),0);
-      if (current > 0){
-        const dealt = Math.floor(current * (CONFIG.DAMAGE_GLOBAL||1));
-
-        const beforeHP = u.hp;                 // <-- NEW
-        u.hp = clamp(u.hp - dealt, 0, u.maxHP);
-syncDeathState(u);
-
 // =========================
 // VFX VOCAB (colors/labels)
 // =========================
@@ -1990,14 +2019,10 @@ const VFX_COL = {
   crit:  '#ffd37a',
   heal:  '#7CFF9A',
   dodge: '#7ad7ff',
-
-  // hard CC (stun/taunt/blind/berserk) = one family color
   cc:    '#ff6bd6',
-
   poison:'#57ff7a',
   buff:  '#a7c4ff',
   debuff:'#ffb36b',
-
   ko:    '#ff6b6b'
 };
 
@@ -2016,6 +2041,24 @@ const VFX_TEXT = {
   marked:'MARKED',
   counter:'COUNTER'
 };
+
+/* ---------- end-of-round ticks & shrug (canonical order) ---------- */
+function endRoundTick(){
+  const all = canonicalUnits();
+
+  for (const u of all){
+    if (!u.alive()) continue;
+
+    // Poison ticks
+    const p = u.status.find(s => s.key === 'poison');
+    if (p && Array.isArray(p.data?.contributions) && p.data.contributions.length){
+      const current = p.data.contributions.reduce((s,c)=>s+(c.amt||0),0);
+      if (current > 0){
+        const dealt = Math.floor(current * (CONFIG.DAMAGE_GLOBAL||1));
+
+        const beforeHP = u.hp;                 // <-- NEW
+        u.hp = clamp(u.hp - dealt, 0, u.maxHP);
+if (typeof syncDeathState === 'function') syncDeathState(u);
 
 vfxPoisonTick(u, dealt);
 
@@ -2163,7 +2206,8 @@ function hit(a, t, opt={}, verb){
 
   const scene = getScene();
   const impactDelay = Math.max(0, Math.floor(projMs * 0.75));
-  const doDodge = () => vfxDodge(target);
+  const doDodge = () => (typeof vfxDodge === 'function') && vfxDodge(target);
+
 
   if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doDodge);
   else doDodge();
@@ -2198,65 +2242,49 @@ function hit(a, t, opt={}, verb){
   target._refresh && target._refresh();
   checkHPWarnings(target);
 
-  // VFX (ONLY ONCE)
-// ---- VFX + logs + KO + procs (DROP-IN) ----
-// ---- VFX + logs + KO + procs (DROP-IN) ----
+// ---- VFX: travel → impact (ONLY ONCE) ----
 if (dmgToApply > 0){
 
   // Decide “spell vs phys” feel from the already-computed result
   const abType = (res && res._type) ? res._type : getAbilityType(a, ability);
   const isMag  = (abType === 'mag');
 
-  const projMs     = isMag ? Math.floor((VFX?.PROJ_MS ?? 260) * 1.15) : (VFX?.PROJ_MS ?? 400);
+  const projMs     = isMag ? Math.floor((VFX?.PROJ_MS ?? 400) * 1.15) : (VFX?.PROJ_MS ?? 400);
   const projColor  = isMag ? 0xa7c4ff : 0xffffff;
   const projRadius = isMag ? 6 : 5;
 
-  // 1) make it clear WHO is acting (attacker cue)
+  // 1) attacker cue (WHO is acting)
   if (typeof vfxActCue === 'function') vfxActCue(a, abilityName);
-  else vfxFlashPanel(a, { ms: 500 });
+  else if (typeof vfxFlashColor === 'function') vfxFlashColor(a, { color: 0xa7c4ff, ms: (VFX?.ACT_FLASH_MS ?? 300), alpha: 0.18 });
+  else if (typeof vfxFlashPanel === 'function') vfxFlashPanel(a, { ms: (VFX?.ACT_FLASH_MS ?? 300) });
 
+  // 2) travel
+  if (typeof vfxProjectile === 'function'){
+    vfxProjectile(a, target, { ms: projMs, color: projColor, radius: projRadius });
+  }
 
-  // 2) readable “travel → impact” sequence
-  vfxProjectile(a, target, { ms: projMs, color: projColor, radius: projRadius });
-
-  // delay impact so travel is readable (0.75 feels better than 0.90)
+  // 3) impact after travel (so it’s readable)
   const impactDelay = Math.max(0, Math.floor(projMs * 0.90));
-
   const scene = getScene();
 
-  // Capture final values NOW (so callback can't drift)
+  // capture values now so delayed callback cannot drift
   const finalTarget = target;
   const amount      = dmgToApply;
   const crit        = !!res.crit;
 
   const doImpact = () => {
-    if (typeof vfxDamage === 'function') {
+    // If you later add vfxDamage() use it; otherwise use the raw helpers
+    if (typeof vfxDamage === 'function'){
       vfxDamage(finalTarget, amount, { crit });
-    } else {
-      vfxShakePanel(finalTarget, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 220) });
-      vfxFlashPanel(finalTarget, { ms: (VFX?.FLASH_MS ?? 250) });
-      vfxFloatText(finalTarget, `-${amount}`, {
-        ms: (VFX?.FLOAT_MS ?? 1500),
-        fontSize: crit ? 28 : 20
-      });
+      return;
     }
+    vfxShakePanel?.(finalTarget, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 220) });
+    vfxFlashPanel?.(finalTarget, { ms: (VFX?.FLASH_MS ?? 250) });
+    vfxFloatText?.(finalTarget, `-${amount}`, { ms: (VFX?.FLOAT_MS ?? 1500), fontSize: crit ? 28 : 20 });
   };
 
   if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doImpact);
   else doImpact();
-}
-
-if (scene?.time?.delayedCall){
-  scene.time.delayedCall(impactDelay, () => {
-    window.vfxShakePanel?.(target, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 500) });
-    window.vfxFlashPanel?.(target, { ms: (VFX?.FLASH_MS ?? 550) });
-    window.vfxFloatText?.(target, `-${dmgToApply}`, { ms: (VFX?.FLOAT_MS ?? 1750), fontSize: res.crit ? 28 : 20 });
-  });
-} else {
-  // fallback (no delay system available)
-  window.vfxShakePanel?.(target, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 500) });
-  window.vfxFlashPanel?.(target, { ms: (VFX?.FLASH_MS ?? 550) });
-  window.vfxFloatText?.(target, `-${dmgToApply}`, { ms: (VFX?.FLOAT_MS ?? 1750), fontSize: res.crit ? 28 : 20 });
 }
 
 }

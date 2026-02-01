@@ -615,27 +615,47 @@ case 'Warrior': return [
   speed:'slow', type:'mag', target:'self',
 
   use:function(a){
-    // ATK↑ — 1 stack for 3 rounds
+    // buffs (unchanged)
     const atkDur = 3;
     pushStatus(a, { key:'atk_up', dur: atkDur });
 
-    // Premonition — acts at fast speed next round
-    // Use dur:2 so it survives the current end-of-round tick.
     const preDur = 2;
     pushStatus(a, { key:'premonition', dur: preDur });
 
-    // Small personal heal that scales a bit with ATK
+    // heal (same numbers)
     const healSpec = { heal:{ min:15, max:25 }, healCoef:0.18, scalesWith:'ATK', type:'mag' };
-
-    // IMPORTANT: target is self (a)
     const H = computeAbilityHeal(a, a, healSpec);
 
-    // Apply the heal and show +HP (cosmetic-only)
-    const out = applyHealAmount(a, a, H, { abilityName: 'Warhorn' });
+    const before = a.hp;
+    a.hp = clamp(a.hp + H, 0, a.maxHP);
+    const healed = a.hp - before;
 
-    appendLog(`${a.name} sounds the Warhorn and surges with strength and quickness. ${a.name} heals ${out.healed}.`);
+    a._refresh && a._refresh();
+    checkHPWarnings?.(a);
+
+    // VFX: show caster + buffs first (cosmetic)
+    vfxActCue?.(a, 'Warhorn');
+    vfxStatus?.(a, 'atk_up', { dur: atkDur, kind:'buff' });
+    vfxFloatText?.(a, `ATK↑ ${atkDur}`, { ms: vfxMs(1200), fontSize: Math.floor(vfxScale(14)), color: (VFX_COL?.buff || '#a7c4ff') });
+
+    // If you want a visible cue for premonition too:
+    vfxStatus?.(a, 'premonition', { dur: preDur, kind:'buff' });
+    vfxFloatText?.(a, `FAST`, { ms: vfxMs(900), fontSize: Math.floor(vfxScale(13)), color: (VFX_COL?.buff || '#a7c4ff') });
+
+    // Heal VFX slightly after (cosmetic only)
+    const scene = getScene();
+    const delay = vfxMs(VFX?.STATUS_TO_HEAL_MS ?? 90);
+
+    if (healed > 0){
+      const doHealVFX = () => vfxHealImpact?.(a, a, healed, 'Warhorn');
+      if (scene?.time?.delayedCall) scene.time.delayedCall(delay, doHealVFX);
+      else doHealVFX();
+    }
+
+    appendLog(`${a.name} sounds the Warhorn and surges with strength and quickness. ${a.name} heals ${healed}.`);
   }
 },
+
 
   {label:'Power Strike', desc:'Slow, potentially heavy blow.', speed:'slow', type:'phys', target:'enemy',
    base:{min:40,max:120}, statCoef:0.60,
@@ -794,22 +814,38 @@ case 'Warrior': return [
 
     /* ===== Cleric ===== */
 case 'Cleric': return [
-  {
-    label: 'Defensive Aura',
-    desc: 'Quickly heal an ally and bolster their defense.',
-    speed: 'fast', type: 'mag', target: 'ally',
-    heal: { min: 25, max: 45 }, healCoef: 0.25, scalesWith: 'SDM',
-    use: (a, t) => {
-      // 1) Buff
-      const dur = buffDurBySDM(a);
-      pushStatus(t, { key: 'def_up', dur });
+{
+  label: 'Defensive Aura',
+  desc: 'Quickly heal an ally and bolster their defense.',
+  speed: 'fast', type: 'mag', target: 'ally',
+  heal: { min: 25, max: 45 }, healCoef: 0.25, scalesWith: 'SDM',
 
-      const H = computeAbilityHeal(a, t, this);
-const out = applyHealAmount(a, t, H, { abilityName: 'Defensive Aura' });
+  use: function(a, t){
+    if (!t) return;
 
-      appendLog(`${a.name} blesses ${t.name} with ${this.label}: DEF↑ (${dur}), healed for ${out.healed}.`);
+    const dur = buffDurBySDM(a);
+    pushStatus(t, { key: 'def_up', dur });
+
+    // heal (same numbers as the ability)
+    const H = computeAbilityHeal(a, t, this);
+    const out = applyHealAmount(a, t, H, { abilityName: 'Defensive Aura', showVFX: false });
+
+    // VFX: show buff first, then heal number slightly after (cosmetic only)
+    vfxActCue?.(a, 'Defensive Aura');
+    vfxStatus?.(t, 'def_up', { dur, kind:'buff' });
+    vfxFloatText?.(t, `DEF↑ ${dur}`, { ms: vfxMs(1200), fontSize: Math.floor(vfxScale(14)), color: (VFX_COL?.buff || '#a7c4ff') });
+
+    const scene = getScene();
+    const delay = vfxMs(VFX?.STATUS_TO_HEAL_MS ?? 90);
+    if (out.healed > 0){
+      if (scene?.time?.delayedCall) scene.time.delayedCall(delay, () => vfxHealImpact?.(a, t, out.healed, 'Defensive Aura'));
+      else vfxHealImpact?.(a, t, out.healed, 'Defensive Aura');
     }
-  },
+
+    appendLog(`${a.name} blesses ${t.name} with Defensive Aura: DEF↑ (${dur}), healed for ${out.healed}.`);
+  }
+},
+
 
   {
     label: 'Attack',
@@ -1025,7 +1061,7 @@ const out = applyHealAmount(a, t, H, { abilityName: 'Defensive Aura' });
    return r;
  }},
 
-      {
+    {
   label:'Cleanse',
   desc:'Remove ailments and heal small wounds.',
   speed:'normal', type:'mag', target:'ally',
@@ -1034,43 +1070,39 @@ const out = applyHealAmount(a, t, H, { abilityName: 'Defensive Aura' });
   use:function(a,t){
     if (!t) return;
 
-    // 1) Cleanse first (so UI/VFX shows the cure before the heal number)
     const removed = cleanseCCAndDebuffs(t);
 
-    // 2) Heal using this ability's heal stats
+    // heal using this ability's numbers
     const H = computeAbilityHeal(a, t, this);
-    const before = t.hp;
-    t.hp = clamp(t.hp + H, 0, t.maxHP);
-    const healed = t.hp - before;
+    const out = applyHealAmount(a, t, H, { abilityName: 'Cleanse', showVFX: false });
 
-    // 3) If they were previously KO'd, this is still not a "revive" — but we can
-    // safely reset KO latches if they are alive now (helps KO→revive→KO loop)
+    // (keep your KO latch clearing behavior exactly)
     if (t.hp > 0){
       t._didKOVFX = false;
       t._deadLogged = false;
     }
 
-    t._refresh && t._refresh();
-    if (typeof checkHPWarnings==='function') checkHPWarnings(t);
+    // VFX: cleanse pop first, then heal pop slightly after (cosmetic only)
+    vfxActCue?.(a, 'Cleanse');
 
-    // 4) VFX (optional helpers; safe if not defined)
-    vfxActCue?.(a, this.label);
-
-    // If you have a status VFX helper, call it for the "cleanse" moment
     if (removed){
-      vfxStatus?.(t, 'cleanse', { kind:'buff' }); // purely cosmetic tag
-      vfxFlashColor?.(t, { color: 0xa7c4ff, ms: 500, alpha: 0.20 });
-      vfxFloatText?.(t, 'CLEANSE', { ms: 1500, fontSize: 22 });
+      vfxStatus?.(t, 'cleanse', { kind:'buff' });
+      vfxFlashColor?.(t, { color: 0xa7c4ff, ms: vfxMs(500), alpha: 0.20 });
+      vfxFloatText?.(t, 'CLEANSE', { ms: vfxMs(1100), fontSize: Math.floor(vfxScale(18)), color: (VFX_COL?.buff || '#a7c4ff') });
     }
 
-    // Heal pop
-    vfxHeal?.(t, healed);
-    vfxFloatText?.(t, `+${healed}`, { ms: (VFX?.FLOAT_MS ?? 1500), fontSize: 22 });
+    const scene = getScene();
+    const delay = vfxMs((VFX?.STATUS_TO_HEAL_MS ?? 90) + (removed ? 90 : 0)); // tiny extra gap if cleanse fired
+    if (out.healed > 0){
+      if (scene?.time?.delayedCall) scene.time.delayedCall(delay, () => vfxHealImpact?.(a, t, out.healed, 'Cleanse'));
+      else vfxHealImpact?.(a, t, out.healed, 'Cleanse');
+    }
 
     const removedText = removed ? ' ailments removed,' : '';
-    appendLog(`${a.name} casts Cleanse on ${t.name}:${removedText} healed for ${healed}.`);
+    appendLog(`${a.name} casts Cleanse on ${t.name}:${removedText} healed for ${out.healed}.`);
   }
 },
+
 
       {label:'Sanctify', desc:'Smite all enemies.', speed:'slow', type:'mag', target:'all-enemies',
        base:{min:20,max:60}, statCoef:0.40,
@@ -1082,47 +1114,40 @@ const out = applyHealAmount(a, t, H, { abilityName: 'Defensive Aura' });
 
     /* ===== Archer ===== */
     case 'Archer': return [
-      {
+     {
   label:`Ranger's Focus`,
   desc:'Heal an ally and boost their attack.',
   speed:'normal', type:'mag', target:'ally',
   heal:{min:25,max:35}, healCoef:0.25, scalesWith:'ATK',
 
-  use:(a,t)=>{
+  use:function(a,t){
     if (!t) return;
 
-    // 1) Buff
     const dur = buffDurBySDM(a);
     pushStatus(t,{ key:'atk_up', dur });
 
-    // 2) Heal (use THIS ability's heal fields so numbers stay consistent)
     const H = computeAbilityHeal(a, t, this);
-    const before = t.hp;
-    t.hp = clamp(t.hp + H, 0, t.maxHP);
-    const healed = t.hp - before;
+    const out = applyHealAmount(a, t, H, { abilityName: `Ranger's Focus`, showVFX: false });
 
-    // If heal brought them back above 0 (edge cases), clear KO latches
     if (t.hp > 0){
       t._didKOVFX = false;
       t._deadLogged = false;
     }
 
-    t._refresh && t._refresh();
-    checkHPWarnings?.(t);
-
-    // 3) VFX (safe-optional)
-    vfxActCue?.(a, this.label);
-
-    // show buff pop
+    // VFX: buff first, then heal slightly after (cosmetic only)
+    vfxActCue?.(a, `Ranger's Focus`);
     vfxStatus?.(t, 'atk_up', { dur, kind:'buff' });
-    vfxFlashColor?.(t, { color: 0xa7ffb5, ms: 450, alpha: 0.18 });
-    vfxFloatText?.(t, `ATK↑ ${dur}`, { ms: 1500, fontSize: 14 });
+    vfxFlashColor?.(t, { color: 0xa7ffb5, ms: vfxMs(450), alpha: 0.18 });
+    vfxFloatText?.(t, `ATK↑ ${dur}`, { ms: vfxMs(1200), fontSize: Math.floor(vfxScale(14)), color: (VFX_COL?.buff || '#a7c4ff') });
 
-    // show heal pop
-    vfxHeal?.(t, healed);
-    vfxFloatText?.(t, `+${healed}`, { ms: (VFX?.FLOAT_MS ?? 1500), fontSize: 22 });
+    const scene = getScene();
+    const delay = vfxMs(VFX?.STATUS_TO_HEAL_MS ?? 90);
+    if (out.healed > 0){
+      if (scene?.time?.delayedCall) scene.time.delayedCall(delay, () => vfxHealImpact?.(a, t, out.healed, `Ranger's Focus`));
+      else vfxHealImpact?.(a, t, out.healed, `Ranger's Focus`);
+    }
 
-    appendLog(`${a.name} focuses ${t.name}: ATK↑ (${dur}), healed for ${healed}.`);
+    appendLog(`${a.name} focuses ${t.name}: ATK↑ (${dur}), healed for ${out.healed}.`);
   }
 },
 
@@ -1156,7 +1181,7 @@ const out = applyHealAmount(a, t, H, { abilityName: 'Defensive Aura' });
        base:{min:40,max:50}, statCoef:0.40, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
-      {label:'Chi Wave', desc:'Cleanse CC/debuffs from all allies.', speed:'fast', type:'mag', target:'all-allies',
+      {label:'Chi Wave', desc:'Cleanse CC/debuffs from all allies.', speed:'normal', type:'mag', target:'all-allies',
        use:(a,arr)=>{ let count=0; for(const ally of arr){ if(!ally.alive()) continue;
          if(cleanseCCAndDebuffs(ally)) count++; updateStatusView(ally); }
          appendLog(count ? `A Chi Wave rips accross the battlefield. Negative effects washed away from ${count} allies.` : `No negative effects to cleanse.`); } },
@@ -2494,12 +2519,13 @@ const VFX = {
   SHAKE_MS: 250,    // shake duration (was ~120)
   SHAKE_PX: 7,
   FLASH_MS: 250,    // flash pulse duration
-  FLOAT_MS: 1250,    // damage number linger
+  FLOAT_MS: 1750,    // damage number linger
   ACT_FLASH_MS: 500, // attacker "acting" ping
   // Global knobs (COSMETIC ONLY)
-  TIME_SCALE: 1.45,   // >1 = slower VFX everywhere
-  GLOBAL_SCALE: 1.10, // scales VFX sizes where applicable
-  AOE_STAGGER_MS: 140 // delay between targets for AoE readability
+  TIME_SCALE: 1.75,   // >1 = slower VFX everywhere
+  GLOBAL_SCALE: 1.20, // scales VFX sizes where applicable
+  AOE_STAGGER_MS: 150 // delay between targets for AoE readability
+  VFX.STATUS_TO_HEAL_MS = 125; // cosmetic only; increase if you want more separation
 
 };
 

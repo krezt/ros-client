@@ -394,54 +394,6 @@ const CONFIG = {
 
 window.STATUS_ICON_SIZE = 40;   // try 28, 32, 36
 
-function applyHeal(caster, target, healSpecOrAbility, {
-  label = 'Heal',
-  showVFX = true,
-  curePoison = false
-} = {}){
-  if (!target) return 0;
-
-  const H = computeAbilityHeal(caster, target, healSpecOrAbility);
-  const before = target.hp;
-
-  target.hp = clamp(target.hp + H, 0, target.maxHP);
-
-  // If we revived them elsewhere and they were at 0, your alive() may depend on hp>0.
-  // This function does NOT auto-revive; it only heals.
-
-  const healed = target.hp - before;
-
-  if (curePoison) removeStatusKey(target, 'poison');
-
-  target._refresh && target._refresh();
-  if (typeof checkHPWarnings === 'function') checkHPWarnings(target);
-
-  if (showVFX && healed > 0){
-    try {
-      // green pop + green tint
-      vfxFlashColor?.(target, { color: 0xa7ffb5, ms: 450, alpha: 0.16 });
-      vfxFloatText?.(target, `+${healed}`, { ms: (VFX?.FLOAT_MS ?? 1500), fontSize: 22 });
-    } catch {}
-  }
-
-  return healed;
-}
-
-function applyHealFlat(target, amount, { showVFX=true } = {}){
-  if (!target || amount<=0) return 0;
-  const before = target.hp;
-  target.hp = clamp(target.hp + amount, 0, target.maxHP);
-  const healed = target.hp - before;
-  target._refresh && target._refresh();
-  checkHPWarnings?.(target);
-
-  if (showVFX && healed > 0){
-    vfxFlashColor?.(target, { color: 0xa7ffb5, ms: 450, alpha: 0.16 });
-    vfxFloatText?.(target, `+${healed}`, { ms: (VFX?.FLOAT_MS ?? 1500), fontSize: 22 });
-  }
-  return healed;
-}
-
 /* ---------- ability type overrides ---------- */
 // ---------- Ability damage-type overrides (mag vs phys) ----------
 // Safe init
@@ -582,6 +534,53 @@ window.CLASS_BLURBS = {
   Mystic: "Control mage with stuns, berserk, and speed manipulation."
 };
 
+function applyHeal(caster, target, healSpecOrAbility, {
+  label = 'Heal',
+  showVFX = true,
+  curePoison = false
+} = {}){
+  if (!target) return 0;
+
+  const H = computeAbilityHeal(caster, target, healSpecOrAbility);
+  const before = target.hp;
+
+  target.hp = clamp(target.hp + H, 0, target.maxHP);
+
+  // If we revived them elsewhere and they were at 0, your alive() may depend on hp>0.
+  // This function does NOT auto-revive; it only heals.
+
+  const healed = target.hp - before;
+
+  if (curePoison) removeStatusKey(target, 'poison');
+
+  target._refresh && target._refresh();
+  if (typeof checkHPWarnings === 'function') checkHPWarnings(target);
+
+  if (showVFX && healed > 0){
+    try {
+      // green pop + green tint
+      vfxFlashColor?.(target, { color: 0xa7ffb5, ms: 450, alpha: 0.16 });
+      vfxFloatText?.(target, `+${healed}`, { ms: (VFX?.FLOAT_MS ?? 1500), fontSize: 22 });
+    } catch {}
+  }
+
+  return healed;
+}
+
+function applyHealFlat(target, amount, { showVFX=true } = {}){
+  if (!target || amount<=0) return 0;
+  const before = target.hp;
+  target.hp = clamp(target.hp + amount, 0, target.maxHP);
+  const healed = target.hp - before;
+  target._refresh && target._refresh();
+  checkHPWarnings?.(target);
+
+  if (showVFX && healed > 0){
+  vfxHealImpact(null, target, healed, 'Heal');
+}
+
+  return healed;
+}
 /* ---------- abilities (now with min/max healing where relevant) ---------- */
 function abilitiesFor(u){
   switch(u.job){
@@ -1169,17 +1168,39 @@ case 'Cleric': return [
       {label:'Plague', desc:'Afflict all foes with massive poison.', speed:'slow', type:'mag', target:'all-enemies',
        base:{min:10,max:60}, statCoef:0.30,
        use:function(a,arr){
-         for (const t of arr){
-           if (!t.alive()) continue;
-           const res = computeAbilityDamage(a, t, this);
-           if (res.hit && !res.dodged && res.dmg > 0){
-             addPoison(t, res.dmg);
-             logGreen(`${t.name} is afflicted by a horrible plague (+${res.dmg}).`);
-           } else {
-             appendLog(`${a.name}'s Plague misses ${t.name}.`);
-           }
-         }
-       }},
+
+  // --- VFX ONLY: show caster -> each target (no gameplay changes) ---
+  try {
+    vfxCastToTargets?.(a, arr.filter(t=>t && t.alive()), {
+      label: 'Plague',
+      proj: { ms: (VFX?.PROJ_MS ?? 750) * 1.15, color: 0x57ff7a, radius: 7 },
+      onImpact: (t) => {
+        // readable "status applied" cue (cosmetic only)
+        vfxFlashColor?.(t, { color: 0x57ff7a, ms: 350, alpha: 0.25 });
+        vfxFloatText?.(t, `PLAGUE`, { ms: vfxMs(900), fontSize: Math.floor(vfxScale(16)) });
+      },
+      staggerMs: (VFX?.AOE_STAGGER_MS ?? 140)
+    });
+  } catch {}
+
+  // --- ORIGINAL MECHANICS (unchanged) ---
+  for (const t of arr){
+    if (!t.alive()) continue;
+    const res = computeAbilityDamage(a, t, this);
+    if (res.hit && !res.dodged && res.dmg > 0){
+      addPoison(t, res.dmg);
+      logGreen(`${t.name} is afflicted by a horrible plague (+${res.dmg}).`);
+
+      // Optional cosmetic: show the amount contributed as poison (not damage)
+      // If you want the number, keep this. If you find it too busy, delete these 2 lines.
+      try { vfxFloatText?.(t, `+${res.dmg} POISON`, { ms: vfxMs(1100), fontSize: Math.floor(vfxScale(16)) }); } catch {}
+
+    } else {
+      appendLog(`${a.name}'s Plague misses ${t.name}.`);
+    }
+  }
+}
+},
 
       {label:'Death Touch', desc:'Crush a third of the foe’s current life.', speed:'slow', type:'mag', target:'enemy',
         use:(a,t)=>{
@@ -1193,38 +1214,69 @@ case 'Cleric': return [
 
 {label:'Plague Detonation', desc:'Consume all poison for an instant burst.', speed:'fast', type:'mag', target:'all-enemies',
   use:(a,arr)=>{
-    let hits = 0;
+  let hits = 0;
 
-    for (const t of arr){
-      if (!t.alive()) continue;
+  // Build the list of targets that WILL actually detonate (poisonTotal > 0)
+  // This is only for VFX clarity; it does not change mechanics.
+  const detTargets = [];
+  for (const t of arr){
+    if (!t || !t.alive()) continue;
+    const total = poisonTotal(t);
+    if (total > 0) detTargets.push(t);
+  }
 
-      const total = poisonTotal(t);
-      if (total <= 0) continue; // (optional) don't spam "no poison" lines
+  // --- VFX ONLY: show caster -> each target (no gameplay changes) ---
+  try {
+    vfxCastToTargets?.(a, detTargets, {
+      label: 'Plague Detonation',
+      proj: { ms: (VFX?.PROJ_MS ?? 750) * 1.05, color: 0xa7c4ff, radius: 8 },
+      onImpact: (t) => {
+        // burst feel (cosmetic only)
+        vfxFlashColor?.(t, { color: 0xa7c4ff, ms: 280, alpha: 0.28 });
+        vfxShakePanel?.(t, { px: (VFX?.SHAKE_PX ?? 7), ms: vfxMs((VFX?.SHAKE_MS ?? 250) * 1.1) });
+        vfxFloatText?.(t, `DETONATE`, { ms: vfxMs(700), fontSize: Math.floor(vfxScale(14)) });
+      },
+      staggerMs: (VFX?.AOE_STAGGER_MS ?? 140)
+    });
+  } catch {}
 
-      // consume poison first
-      removeStatusKey(t,'poison');
+  // --- ORIGINAL MECHANICS (unchanged) ---
+  for (const t of arr){
+    if (!t.alive()) continue;
 
-      let dmg = Math.floor(total * (CONFIG.DAMAGE_GLOBAL||1));
-      if (hasStatus(t,'marked')) dmg = Math.floor(dmg * (CONFIG.MARKED_MULT||1.25));
+    const total = poisonTotal(t);
+    if (total <= 0) continue; // (optional) don't spam "no poison" lines
 
-      const beforeHP = t.hp;
-      t.hp = clamp(t.hp - dmg, 0, t.maxHP);
+    // consume poison first
+    removeStatusKey(t,'poison');
 
-      t._refresh && t._refresh();
-      if (typeof checkHPWarnings === 'function') checkHPWarnings(t);
+    let dmg = Math.floor(total * (CONFIG.DAMAGE_GLOBAL||1));
+    if (hasStatus(t,'marked')) dmg = Math.floor(dmg * (CONFIG.MARKED_MULT||1.25));
 
-      appendLogHTML(`<span style="color:#9be29b">${t.name} suffers ${dmg} from exploding plague.</span>`);
+    const beforeHP = t.hp;
+    t.hp = clamp(t.hp - dmg, 0, t.maxHP);
 
-      // ✅ announce death if this hit killed them
-      if (beforeHP > 0 && t.hp <= 0){
-        appendLog(`☠ ${t.name} is down!`);
-      }
+    t._refresh && t._refresh();
+    if (typeof checkHPWarnings === 'function') checkHPWarnings(t);
 
-      hits++;
+    appendLogHTML(`<span style="color:#9be29b">${t.name} suffers ${dmg} from exploding plague.</span>`);
+
+    // Cosmetic: show the actual burst damage number (this was missing before)
+    try {
+      vfxFloatText?.(t, `-${dmg}`, { ms: vfxMs(VFX?.FLOAT_MS ?? 1250), fontSize: Math.floor(vfxScale(22)) });
+    } catch {}
+
+    // ✅ announce death if this hit killed them
+    if (beforeHP > 0 && t.hp <= 0){
+      appendLog(`☠ ${t.name} is down!`);
     }
 
-    if (!hits) appendLog(`No poisons to detonate.`);
+    hits++;
   }
+
+  if (!hits) appendLog(`No poisons to detonate.`);
+}
+
 }
 
     ];
@@ -1675,18 +1727,24 @@ function applyHeal(caster, target, amount, { abilityName='Heal' } = {}){
   const healed = target.hp - before;
 
   if (healed > 0){
-    target._refresh && target._refresh();
-    checkHPWarnings && checkHPWarnings(target);
+  target._refresh && target._refresh();
+  checkHPWarnings && checkHPWarnings(target);
 
-    // VFX: show who cast + who received
-    vfxActCue?.(caster, abilityName);
-
-    // Green impact on the healed unit
-    vfxFlashColor?.(target, { color: 0x57ff7a, ms: 300, alpha: 0.22 });
-    vfxFloatText?.(target, `+${healed}`, { ms: (VFX?.FLOAT_MS ?? 1500), fontSize: 22 });
-  }
+  vfxHealImpact(caster, target, healed, abilityName);
+}
 
   return { healed };
+}
+
+function vfxHealImpact(caster, target, healed, label='Heal'){
+  if (!target || healed <= 0) return;
+
+  // show WHO cast (optional but improves clarity)
+  if (caster) vfxActCue?.(caster, label);
+
+  // show heal on target
+  vfxFlashColor?.(target, { color: 0xa7ffb5, ms: vfxMs(450), alpha: 0.18 });
+  vfxFloatText?.(target, `+${healed}`, { ms: vfxMs(VFX?.FLOAT_MS ?? 1500), fontSize: Math.floor(vfxScale(22)) });
 }
 
 /* lightweight raw calc */
@@ -1939,12 +1997,8 @@ function applyHeal(caster, target, healSpecOrAbility, {
   if (typeof checkHPWarnings === 'function') checkHPWarnings(target);
 
   if (showVFX && healed > 0){
-    try {
-      // green pop + green tint
-      vfxFlashColor?.(target, { color: 0xa7ffb5, ms: 450, alpha: 0.16 });
-      vfxFloatText?.(target, `+${healed}`, { ms: (VFX?.FLOAT_MS ?? 900), fontSize: 18 });
-    } catch {}
-  }
+  vfxHealImpact(caster, target, healed, label);
+}
 
   return healed;
 }
@@ -2100,14 +2154,14 @@ vfxPoisonTick(u, dealt);
 }
 
 function vfxPoisonTick(u, amount){
-  vfxFlashColor(u, { color: 0x57ff7a, ms: 300, alpha: 0.40 });
-  vfxFloatText(u, `-${amount} POISON`, { ms: 1250, fontSize: 18 });
+  vfxFlashColor(u, { color: 0x57ff7a, ms: vfxMs(300), alpha: 0.40 });
+  vfxFloatText(u, `-${amount} POISON`, { ms: vfxMs(1250), fontSize: Math.floor(vfxScale(18)) });
 }
 
 function vfxActCue(u, label, { ms = VFX.ACT_FLASH_MS } = {}){
   if (!u) return;
-  vfxFlashColor(u, { color: 0xa7c4ff, ms, alpha: 0.18 });
-  if (label) vfxFloatText(u, label, { ms: 700, fontSize: 14 });
+  vfxFlashColor(u, { color: 0xa7c4ff, ms: vfxMs(ms), alpha: 0.18 });
+  if (label) vfxFloatText(u, label, { ms: vfxMs(700), fontSize: Math.floor(vfxScale(14)) });
 }
 
 function vfxFlashColor(u, { ms=225, color=0x57ff7a, alpha=0.35 } = {}){
@@ -2132,7 +2186,7 @@ g.disableInteractive?.();
   scene.tweens.add({
     targets: g,
     alpha: 0,
-    duration: ms,
+    duration: vfxMs(ms),
     ease: 'Quad.easeOut',
     onComplete: () => g.destroy()
   });
@@ -2148,7 +2202,20 @@ const VFX = {
   FLASH_MS: 250,    // flash pulse duration
   FLOAT_MS: 1250,    // damage number linger
   ACT_FLASH_MS: 500 // attacker "acting" ping
+  // Global knobs (COSMETIC ONLY)
+  TIME_SCALE: 1.45,   // >1 = slower VFX everywhere
+  GLOBAL_SCALE: 1.10, // scales VFX sizes where applicable
+  AOE_STAGGER_MS: 140 // delay between targets for AoE readability
+
 };
+
+function vfxMs(ms){
+  return Math.max(0, Math.floor(ms * (VFX?.TIME_SCALE ?? 1)));
+}
+
+function vfxScale(n){
+  return n * (VFX?.GLOBAL_SCALE ?? 1);
+}
 
 function vfxFlashPanel(u, { ms=120 } = {}){
   const scene = getScene();
@@ -2158,9 +2225,56 @@ function vfxFlashPanel(u, { ms=120 } = {}){
   scene.tweens.add({
     targets: panel,
     alpha: { from: 1, to: 0.35 },
-    duration: ms,
+    duration: vfxMs(ms),
     yoyo: true,
     ease: 'Quad.easeOut'
+  });
+}
+
+async function vfxCastToTargets(caster, targets, {
+  label = '',
+  proj = { ms: VFX.PROJ_MS, color: 0xa7c4ff, radius: 6 },
+  onImpact = null,              // function(t){...} cosmetic only
+  staggerMs = VFX.AOE_STAGGER_MS
+} = {}){
+  if (!caster || !Array.isArray(targets) || targets.length === 0) return;
+
+  // 1) show WHO is acting
+  vfxActCue?.(caster, label, { ms: VFX.ACT_FLASH_MS });
+
+  // 2) caster -> each target, staggered
+  const scene = getScene();
+  const projMs = vfxMs(proj.ms ?? VFX.PROJ_MS);
+  const impactDelay = Math.max(0, Math.floor(projMs * 0.90));
+  const step = vfxMs(staggerMs ?? 120);
+
+  targets.forEach((t, i) => {
+    if (!t) return;
+
+    // travel immediately (but stagger start time)
+    const startDelay = i * step;
+
+    const doTravel = () => {
+      vfxProjectile?.(caster, t, {
+        ms: projMs,
+        color: proj.color ?? 0xa7c4ff,
+        radius: Math.floor(vfxScale(proj.radius ?? 6))
+      });
+
+      const doImpact = () => {
+        // default readable impact if none provided
+        if (typeof onImpact === 'function') onImpact(t);
+        else {
+          vfxFlashColor?.(t, { color: (proj.color ?? 0xa7c4ff), ms: vfxMs(VFX.FLASH_MS), alpha: 0.22 });
+        }
+      };
+
+      if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doImpact);
+      else doImpact();
+    };
+
+    if (scene?.time?.delayedCall) scene.time.delayedCall(startDelay, doTravel);
+    else doTravel();
   });
 }
 

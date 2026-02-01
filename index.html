@@ -2287,8 +2287,6 @@ if (dmgToApply > 0){
   else doImpact();
 }
 
-}
-
 // ---- Combat log ----
 if (abilityName.toLowerCase()==='attack'){
   if (res.crit) appendLogHTML(`${a.name}’s attack lands a <span style="color:gold">critical strike</span>! ${target.name} takes ${dmgToApply} damage.`);

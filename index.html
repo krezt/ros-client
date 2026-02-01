@@ -343,7 +343,7 @@ function clearActionBar(){ if (actionButtonsEl) actionButtonsEl.innerHTML = ''; 
 
 /* ---------- tiny async helpers ---------- */
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-const SLEEP_TINY_MS=1000, ACTION_DELAY_MS=1000, ACTION_STEP_DELAY_MS=1000, ROUND_END_DELAY_MS=1000;
+const SLEEP_TINY_MS=1250, ACTION_DELAY_MS=1250, ACTION_STEP_DELAY_MS=1250, ROUND_END_DELAY_MS=1250;
 
 /* ---------- RNG (unified, deterministic) ---------- */
 (function(){
@@ -1030,18 +1030,24 @@ function panelCenterWorld(u){
   return { x, y };
 }
 
-function vfxFlashPanel(u, { ms=120 } = {}){
+function vfxShakePanel(u, { px=6, ms=160 } = {}){
   const scene = getScene();
   const panel = u?._ui?.panel;
   if (!scene || !panel) return;
 
-  // quick white flash via alpha pulse
+  // prevent stacking drift
+  scene.tweens.killTweensOf(panel);
+
+  const x0 = panel.x, y0 = panel.y;
   scene.tweens.add({
     targets: panel,
-    alpha: { from: 1, to: 0.35 },
+    x: x0 + px,
+    y: y0,
     duration: ms,
     yoyo: true,
-    ease: 'Quad.easeOut'
+    repeat: 2,
+    ease: 'Sine.easeInOut',
+    onComplete: () => { panel.x = x0; panel.y = y0; }
   });
 }
 
@@ -1087,16 +1093,15 @@ function vfxFloatText(u, text, { ms=650, fontSize=20 } = {}){
   });
 }
 
-function vfxProjectile(a, t, { key=null, ms=260 } = {}){
+function vfxProjectile(a, t, { ms=260, color=0xffffff, radius=5 } = {}){
   const scene = getScene();
   const from = panelCenterWorld(a);
   const to   = panelCenterWorld(t);
   if (!scene || !from || !to) return;
 
-  // Minimal “dot projectile” using a circle Graphics (no assets required)
   const g = scene.add.graphics().setDepth(9998);
-  g.fillStyle(0xffffff, 1);
-  g.fillCircle(0, 0, 5);
+  g.fillStyle(color, 1);
+  g.fillCircle(0, 0, radius);
   g.x = from.x; g.y = from.y;
 
   scene.tweens.add({
@@ -1429,6 +1434,9 @@ function endRoundTick(){
 
         const beforeHP = u.hp;                 // <-- NEW
         u.hp = clamp(u.hp - dealt, 0, u.maxHP);
+syncDeathState(u);
+
+vfxPoisonTick(u, dealt);
 
         p.data.contributions = p.data.contributions
           .map(c => ({ amt: Math.floor(c.amt * 0.85) }))
@@ -1467,29 +1475,82 @@ function endRoundTick(){
   }
 }
 
+function vfxPoisonTick(u, amount){
+  vfxFlashColor(u, { color: 0x57ff7a, ms: 300, alpha: 0.40 });
+  vfxFloatText(u, `-${amount} POISON`, { ms: 1250, fontSize: 18 });
+}
 
+function vfxActCue(u, label, { ms = VFX.ACT_FLASH_MS } = {}){
+  if (!u) return;
+  vfxFlashColor(u, { color: 0xa7c4ff, ms, alpha: 0.18 });
+  if (label) vfxFloatText(u, label, { ms: 700, fontSize: 14 });
+}
+
+function vfxFlashColor(u, { ms=225, color=0x57ff7a, alpha=0.35 } = {}){
+  const scene = getScene();
+  const panel = u?._ui?.panel;
+  if (!scene || !panel) return;
+
+  // draw a colored rectangle the same size as the panel, inside the panel container
+  const w = scene.PANEL_W || 380;
+  const h = scene.PANEL_H || 120;
+
+  const g = scene.add.graphics().setDepth(9997);
+  g.fillStyle(color, 1);
+  g.fillRect(0, 0, w, h);
+  g.setAlpha(alpha);
+g.disableInteractive?.();
+
+
+  // IMPORTANT: add it to the panel container so it moves with shake, etc.
+  panel.add(g);
+
+  scene.tweens.add({
+    targets: g,
+    alpha: 0,
+    duration: ms,
+    ease: 'Quad.easeOut',
+    onComplete: () => g.destroy()
+  });
+}
 
 /* ---------- team accessor ---------- */
 function teamArray(team){ return team==='player' ? player : enemy; }
 
+const VFX = {
+  PROJ_MS: 750,     // projectile travel time (was ~260)
+  SHAKE_MS: 250,    // shake duration (was ~120)
+  SHAKE_PX: 7,
+  FLASH_MS: 225,    // flash pulse duration
+  FLOAT_MS: 1250,    // damage number linger
+  ACT_FLASH_MS: 550 // attacker "acting" ping
+};
+
+
 /* ---------- core hit() ---------- */
 function hit(a, t, opt={}, verb){
-  if (hasStatus(a,'stun')){ appendLog(`${a.name} is stunned and cannot act.`); return {dealt:0,dodged:false,crit:false}; }
+  if (hasStatus(a,'stun')){
+    appendLog(`${a.name} is stunned and cannot act.`);
+    return {dealt:0,dodged:false,crit:false};
+  }
 
   const ability = opt.ability;
   const looksLikeAbility = ability && (ability.base || ability.statCoef!==undefined || ability.defPen!==undefined || ability.isBasic);
-  let target=t;
+  let target = t;
 
   // Shieldwall redirect (first single-target hit)
-  const wantsST = ability && ability.target==='enemy';
+  const wantsST = ability && ability.target === 'enemy';
   if (wantsST && !opt._noRedirect && t && t.team){
-    const pool=teamArray(t.team); const guardian=pool.find(u=>u!==t && u.alive() && hasStatus(u,'shield_redirect'));
+    const pool = teamArray(t.team);
+    const guardian = pool.find(u => u!==t && u.alive() && hasStatus(u,'shield_redirect'));
     if (guardian){
-      const st=guardian.status.find(s=>s.key==='shield_redirect'); if(st&&(st.data??(st.data={}))){
-        st.data.remaining=(st.data.remaining??1)-1; if (st.data.remaining<=0) removeStatusKey(guardian,'shield_redirect');
+      const st = guardian.status.find(s=>s.key==='shield_redirect');
+      if (st && (st.data ?? (st.data = {}))){
+        st.data.remaining = (st.data.remaining ?? 1) - 1;
+        if (st.data.remaining <= 0) removeStatusKey(guardian,'shield_redirect');
       }
       appendLogHTML(`${guardian.name} <span style="color:#a7c4ff">intercepts</span> the blow for ${t.name}!`);
-      target=guardian;
+      target = guardian;
     }
   }
 
@@ -1497,79 +1558,114 @@ function hit(a, t, opt={}, verb){
   const abilityName = (a._usingAbilityLabel || (verb ? verb : (ability ? ability.label : (opt.type==='mag'?'spell':'attack'))));
 
   if (res.dodged){
-  vfxFlashPanel(a, { ms: 80 });
-  vfxFlashPanel(target, { ms: 80 });
-  appendLogHTML(`${target.name} <span style="color:skyblue">dodges</span> ${a.name}’s ${abilityName}!`);
-  return {dealt:0,dodged:true,crit:false};
-}
+    vfxFlashPanel(a, { ms: 100 });
+    vfxFlashPanel(target, { ms: 100 });
+    appendLogHTML(`${target.name} <span style="color:skyblue">dodges</span> ${a.name}’s ${abilityName}!`);
+    return {dealt:0,dodged:true,crit:false};
+  }
 
-  let dmgToApply=res.dmg;
+  let dmgToApply = res.dmg;
   if (a._echoing) dmgToApply = Math.floor(dmgToApply * (a._echoMult || CONFIG.ECHO_MULT || 1.05));
   if (opt.dmgMult) dmgToApply = Math.floor(dmgToApply * opt.dmgMult);
 
-  if (hasStatus(target,'divine_shield') && dmgToApply>0){ appendLogHTML(`${target.name} is protected by <span style="color:#ffd700">Divine Shield</span>! No damage taken.`); dmgToApply=0; }
-  if (hasStatus(target,'marked') && dmgToApply>0){ dmgToApply=Math.floor(dmgToApply*(CONFIG.MARKED_MULT||1.8)); }
+  if (hasStatus(target,'divine_shield') && dmgToApply>0){
+    appendLogHTML(`${target.name} is protected by <span style="color:#ffd700">Divine Shield</span>! No damage taken.`);
+    dmgToApply = 0;
+  }
+  if (hasStatus(target,'marked') && dmgToApply>0){
+    dmgToApply = Math.floor(dmgToApply*(CONFIG.MARKED_MULT||1.8));
+  }
   if (hasStatus(target,'guard') && dmgToApply>0){
-    const pctFromStatus=target.status.find(s=>s.key==='guard')?.data?.pct;
-    const guardPct=Number.isFinite(pctFromStatus)?pctFromStatus:(window.GUARD_REDUCTION??0.5);
-    const clamped=Math.max(0,Math.min(0.95,guardPct)); const reduced=Math.floor(dmgToApply*(1-clamped));
-    const saved=dmgToApply-reduced; dmgToApply=reduced; if (saved>0) appendLogHTML(`${target.name} <span style="color:#a7c4ff">guards</span>, mitigating ${saved} damage.`);
+    const pctFromStatus = target.status.find(s=>s.key==='guard')?.data?.pct;
+    const guardPct = Number.isFinite(pctFromStatus) ? pctFromStatus : (window.GUARD_REDUCTION ?? 0.5);
+    const clamped = Math.max(0, Math.min(0.95, guardPct));
+    const reduced = Math.floor(dmgToApply*(1-clamped));
+    const saved = dmgToApply - reduced;
+    dmgToApply = reduced;
+    if (saved>0) appendLogHTML(`${target.name} <span style="color:#a7c4ff">guards</span>, mitigating ${saved} damage.`);
   }
 
+  // apply damage
   target.hp = clamp(target.hp - dmgToApply, 0, target.maxHP);
   target._refresh && target._refresh();
   checkHPWarnings(target);
 
-// ---- VFX: impact (cosmetic only) ----
+  // VFX (ONLY ONCE)
+// ---- VFX + logs + KO + procs (DROP-IN) ----
 if (dmgToApply > 0){
-  vfxProjectile(a, target);         // optional but feels great
-  vfxShakePanel(target, { px: 6 });
-  vfxFlashPanel(target, { ms: 110 });
-  vfxFloatText(target, `-${dmgToApply}`, { fontSize: res.crit ? 26 : 20 });
+
+  // Decide “spell vs phys” feel from the already-computed result
+  const abType = (res && res._type) ? res._type : getAbilityType(a, ability);
+  const isMag  = (abType === 'mag');
+
+  const projMs     = isMag ? Math.floor((VFX?.PROJ_MS ?? 260) * 1.15) : (VFX?.PROJ_MS ?? 260);
+  const projColor  = isMag ? 0xa7c4ff : 0xffffff;
+  const projRadius = isMag ? 6 : 5;
+
+  // 1) make it clear WHO is acting (attacker cue)
+  if (typeof vfxActCue === 'function') vfxActCue(a, abilityName);
+  else vfxFlashPanel(a, { ms: (VFX?.ACT_FLASH_MS ?? 220) });
+
+  // 2) readable “travel → impact” sequence
+  vfxProjectile(a, target, { ms: projMs, color: projColor, radius: projRadius });
+
+  // (optional) slight delay before impact so travel is readable
+  const impactDelay = Math.max(0, Math.floor(projMs * 0.60));
+
+  const scene = getScene();
+  if (scene && scene.time && scene.time.delayedCall){
+    scene.time.delayedCall(impactDelay, () => {
+      vfxShakePanel(target, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 220) });
+      vfxFlashPanel(target, { ms: (VFX?.FLASH_MS ?? 180) });
+      vfxFloatText(target, `-${dmgToApply}`, { ms: (VFX?.FLOAT_MS ?? 900), fontSize: res.crit ? 28 : 20 });
+    });
+  } else {
+    // fallback (no delay system available)
+    vfxShakePanel(target, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 220) });
+    vfxFlashPanel(target, { ms: (VFX?.FLASH_MS ?? 180) });
+    vfxFloatText(target, `-${dmgToApply}`, { ms: (VFX?.FLOAT_MS ?? 900), fontSize: res.crit ? 28 : 20 });
+  }
 }
 
-  if (abilityName.toLowerCase()==='attack'){
-    if (res.crit) appendLogHTML(`${a.name}’s attack lands a <span style="color:gold">critical strike</span>! ${target.name} takes ${dmgToApply} damage.`);
-    else          appendLog(`${a.name} attacks ${target.name} for ${dmgToApply} damage.`);
-  } else {
-    if (res.crit) appendLogHTML(`${a.name}’s ${abilityName} lands a <span style="color:gold">critical strike</span>! ${target.name} takes ${dmgToApply} damage.`);
-    else          appendLog(`${a.name} uses ${abilityName}. ${target.name} takes ${dmgToApply} damage.`);
-  }
+// ---- Combat log ----
+if (abilityName.toLowerCase()==='attack'){
+  if (res.crit) appendLogHTML(`${a.name}’s attack lands a <span style="color:gold">critical strike</span>! ${target.name} takes ${dmgToApply} damage.`);
+  else          appendLog(`${a.name} attacks ${target.name} for ${dmgToApply} damage.`);
+} else {
+  if (res.crit) appendLogHTML(`${a.name}’s ${abilityName} lands a <span style="color:gold">critical strike</span>! ${target.name} takes ${dmgToApply} damage.`);
+  else          appendLog(`${a.name} uses ${abilityName}. ${target.name} takes ${dmgToApply} damage.`);
+}
 
-  // --- KO handling (one-time VFX per death, supports revive) ---
+// ---- KO handling (one-time VFX per death, supports revive) ----
 if (dmgToApply > 0 && target.hp <= 0){
   appendLogHTML(`<span style="color:#ff6b6b">☠ ${target.name} is down!</span>`);
 
-  // Only play KO VFX once per death event
   if (!target._didKOVFX){
     target._didKOVFX = true;
     vfxKO(target);
   }
 
-  // draw KO X via _refresh
   if (target._ui) target._refresh && target._refresh();
 } else {
-  // If they're alive, clear the KO-vfx latch so future deaths can animate again
-  if (target._didKOVFX) target._didKOVFX = false;
+  // only clear latch when they're actually alive again
+  if (target.hp > 0 && target._didKOVFX) target._didKOVFX = false;
 }
 
-// Basic-attack proc (only if target survived)
+// ---- Basic-attack proc (only if target survived) ----
 if (ability?.isBasic && dmgToApply > 0 && target.alive()){
   maybeProcOnBasic(a, target);
 }
 
-// Counter
-if (!opt._noCounter && target.alive() && a.alive() && hasStatus(target,'counter')){
-  const counter = {label:'Counter', type:'phys', target:'enemy', base:{min:8,max:14}, scalesWith:'ATK', statCoef:(CONFIG.COUNTER_COEF||0.30)};
-  const oldLabel = target._usingAbilityLabel;
-  target._usingAbilityLabel = 'Counter';
-  hit(target, a, {ability:counter, _noCounter:true, _noRedirect:true}, 'counterstrikes');
-  target._usingAbilityLabel = oldLabel;
-}
+  if (!opt._noCounter && target.alive() && a.alive() && hasStatus(target,'counter')){
+    const counter = {label:'Counter', type:'phys', target:'enemy', base:{min:8,max:14}, scalesWith:'ATK', statCoef:(CONFIG.COUNTER_COEF||0.30)};
+    const oldLabel = target._usingAbilityLabel;
+    target._usingAbilityLabel = 'Counter';
+    hit(target, a, {ability:counter, _noCounter:true, _noRedirect:true}, 'counterstrikes');
+    target._usingAbilityLabel = oldLabel;
+  }
 
-return {dealt:dmgToApply, dodged:false, crit:res.crit};
+  return {dealt:dmgToApply, dodged:false, crit:res.crit};
 }
-
 
 /* ===== PART 3/4 — Parties, UI, Scene, Round ===== */
 

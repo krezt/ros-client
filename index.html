@@ -1051,24 +1051,6 @@ function vfxShakePanel(u, { px=6, ms=160 } = {}){
   });
 }
 
-function vfxShakePanel(u, { px=6, ms=120 } = {}){
-  const scene = getScene();
-  const panel = u?._ui?.panel;
-  if (!scene || !panel) return;
-
-  const x0 = panel.x, y0 = panel.y;
-  scene.tweens.add({
-    targets: panel,
-    x: x0 + px,
-    y: y0,
-    duration: ms,
-    yoyo: true,
-    repeat: 2,
-    ease: 'Sine.easeInOut',
-    onComplete: () => { panel.x = x0; panel.y = y0; }
-  });
-}
-
 function vfxFloatText(u, text, { ms=650, fontSize=20 } = {}){
   const scene = getScene();
   const pos = panelCenterWorld(u);
@@ -1126,6 +1108,20 @@ function vfxKO(u){
     ease: 'Quad.easeOut'
   });
 }
+
+// ---- make VFX functions global-safe (fixes delayedCall scope issues) ----
+window.getScene        = window.getScene        || getScene;
+window.panelCenterWorld= window.panelCenterWorld|| panelCenterWorld;
+
+window.vfxFlashPanel   = window.vfxFlashPanel   || vfxFlashPanel;
+window.vfxShakePanel   = window.vfxShakePanel   || vfxShakePanel;
+window.vfxFloatText    = window.vfxFloatText    || vfxFloatText;
+window.vfxProjectile   = window.vfxProjectile   || vfxProjectile;
+window.vfxKO           = window.vfxKO           || vfxKO;
+
+// if you use these too:
+if (typeof vfxFlashColor === 'function') window.vfxFlashColor = window.vfxFlashColor || vfxFlashColor;
+if (typeof vfxActCue    === 'function')  window.vfxActCue     = window.vfxActCue     || vfxActCue;
 
 /* ===== PART 2/4 — ENGINE HELPERS ===== */
 
@@ -1418,6 +1414,29 @@ function roundStateChecksum(){
   return (fnv1a(json) >>> 0);
 }
 
+// ---- keeps KO/revive/KO consistent no matter what caused death ----
+function syncDeathState(u){
+  if (!u) return;
+
+  const dead = (u.hp <= 0);
+
+  if (dead){
+    // latch KO VFX once per death event
+    if (!u._didKOVFX){
+      u._didKOVFX = true;
+      if (typeof vfxKO === 'function') vfxKO(u);
+    }
+    // (optional) ensure UI reflects dead
+    if (u._refresh) u._refresh();
+  } else {
+    // revived: clear latches so next KO can animate again
+    if (u._didKOVFX) u._didKOVFX = false;
+    if (u._deadLogged) u._deadLogged = false;
+    if (u._refresh) u._refresh();
+  }
+}
+window.syncDeathState = syncDeathState;
+
 /* ---------- end-of-round ticks & shrug (canonical order) ---------- */
 function endRoundTick(){
   const all = canonicalUnits();
@@ -1521,11 +1540,24 @@ const VFX = {
   PROJ_MS: 750,     // projectile travel time (was ~260)
   SHAKE_MS: 250,    // shake duration (was ~120)
   SHAKE_PX: 7,
-  FLASH_MS: 225,    // flash pulse duration
+  FLASH_MS: 250,    // flash pulse duration
   FLOAT_MS: 1250,    // damage number linger
-  ACT_FLASH_MS: 550 // attacker "acting" ping
+  ACT_FLASH_MS: 750 // attacker "acting" ping
 };
 
+function vfxFlashPanel(u, { ms=120 } = {}){
+  const scene = getScene();
+  const panel = u?._ui?.panel;
+  if (!scene || !panel) return;
+
+  scene.tweens.add({
+    targets: panel,
+    alpha: { from: 1, to: 0.35 },
+    duration: ms,
+    yoyo: true,
+    ease: 'Quad.easeOut'
+  });
+}
 
 /* ---------- core hit() ---------- */
 function hit(a, t, opt={}, verb){
@@ -1613,18 +1645,20 @@ if (dmgToApply > 0){
   const impactDelay = Math.max(0, Math.floor(projMs * 0.90));
 
   const scene = getScene();
-  if (scene && scene.time && scene.time.delayedCall){
-    scene.time.delayedCall(impactDelay, () => {
-      vfxShakePanel(target, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 500) });
-      vfxFlashPanel(target, { ms: (VFX?.FLASH_MS ?? 550) });
-      vfxFloatText(target, `-${dmgToApply}`, { ms: (VFX?.FLOAT_MS ?? 1750), fontSize: res.crit ? 28 : 20 });
-    });
-  } else {
-    // fallback (no delay system available)
-    vfxShakePanel(target, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 500) });
-    vfxFlashPanel(target, { ms: (VFX?.FLASH_MS ?? 550) });
-    vfxFloatText(target, `-${dmgToApply}`, { ms: (VFX?.FLOAT_MS ?? 1750), fontSize: res.crit ? 28 : 20 });
-  }
+
+if (scene?.time?.delayedCall){
+  scene.time.delayedCall(impactDelay, () => {
+    window.vfxShakePanel?.(target, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 500) });
+    window.vfxFlashPanel?.(target, { ms: (VFX?.FLASH_MS ?? 550) });
+    window.vfxFloatText?.(target, `-${dmgToApply}`, { ms: (VFX?.FLOAT_MS ?? 1750), fontSize: res.crit ? 28 : 20 });
+  });
+} else {
+  // fallback (no delay system available)
+  window.vfxShakePanel?.(target, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 500) });
+  window.vfxFlashPanel?.(target, { ms: (VFX?.FLASH_MS ?? 550) });
+  window.vfxFloatText?.(target, `-${dmgToApply}`, { ms: (VFX?.FLOAT_MS ?? 1750), fontSize: res.crit ? 28 : 20 });
+}
+
 }
 
 // ---- Combat log ----

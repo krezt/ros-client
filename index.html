@@ -545,27 +545,28 @@ case 'Warrior': return [
    base:{min:45,max:75}, statCoef:0.35, isBasic:true,
    use:function(a,t){ return hit(a,t,{ability:this}); } },
 
-  {label:'Warhorn', desc:'Heal and briefly bolster yourself with strength and ability quickness.',
-   speed:'slow', type:'phys', target:'self',
-   use:(a)=>{
-     // ATK↑ — 1 stack for 3 rounds
-     const atkDur = 3;
-     pushStatus(a, { key:'atk_up', dur: atkDur });
+{label:'Warhorn', desc:'Heal and briefly bolster yourself with strength and ability quickness.',
+ speed:'slow', type:'mag', target:'self',
+ use:(a)=>{
+   // ATK↑ — 1 stack for 3 rounds
+   const atkDur = 3;
+   pushStatus(a, { key:'atk_up', dur: atkDur });
 
-     // Premonition — acts at fast speed next round
-     // Use dur:2 so it survives the current end-of-round tick.
-     const preDur = 2;
-     pushStatus(a, { key:'premonition', dur: preDur });
+   // Premonition — acts at fast speed next round
+   // Use dur:2 so it survives the current end-of-round tick.
+   const preDur = 2;
+   pushStatus(a, { key:'premonition', dur: preDur });
 
-     // Small personal heal that scales a bit with ATK
-     const healSpec = { heal:{ min:10, max:20 }, healCoef:0.18, scalesWith:'ATK', type:'mag' };
-     const H = computeAbilityHeal(a, a, healSpec);
-     const before = a.hp;
-     a.hp = clamp(a.hp + H, 0, a.maxHP);
-     a._refresh && a._refresh(); checkHPWarnings(a);
+   // Small personal heal that scales a bit with ATK
+   const healSpec = { heal:{ min:15, max:25 }, healCoef:0.18, scalesWith:'ATK', type:'mag' };
+   const H = computeAbilityHeal(a, a, healSpec);
 
-     appendLog(`${a.name} sounds the Warhorn and surges with a burst of strength and quickness. ${a.name} is healed for ${a.hp - before}.`);
-   }}, // <-- important comma here
+   // ✅ Use your new helper here (this is the right spot)
+   const out = applyHeal(a, a, H, { abilityName: 'Warhorn' });
+
+   appendLog(`${a.name} sounds the Warhorn and surges with strength and quickness. ${a.name} heals ${out.healed}.`);
+ }},
+
 
   {label:'Power Strike', desc:'Slow, potentially heavy blow.', speed:'slow', type:'phys', target:'enemy',
    base:{min:40,max:120}, statCoef:0.60,
@@ -661,27 +662,21 @@ case 'Warrior': return [
          return r;
        }},
 
-     {label:'Smoke Bomb', desc:'Blind all enemies this round and heal for 15% of max HP.', speed:'fast', type:'phys', target:'all-enemies',
-  use:(a,arr)=>{
-    // blind enemies
-    let n = 0;
-    for (const t of arr){
-      if (!t.alive()) continue;
-      pushStatus(t,{key:'blind', dur:1});
-      n++;
-    }
+     {label:'Smoke Bomb', desc:'Blind all enemies this round and heal for 15% of max HP.', speed:'fast', type:'mag', target:'all-enemies',
+ use:(a,arr)=>{
+   // blind enemies
+   let n = 0;
+   for (const t of arr){
+     if (!t.alive()) continue;
+     pushStatus(t,{key:'blind', dur:1});
+     n++;
+   }
 
-    // heal self for 15% of max HP
-    const healAmt = Math.max(1, Math.floor(a.maxHP * 0.15));
-    const before  = a.hp;
-    a.hp = clamp(a.hp + healAmt, 0, a.maxHP);
-    const healed = a.hp - before;
-    a._refresh && a._refresh();
-    checkHPWarnings(a);
+   const healAmt = Math.max(1, Math.floor(a.maxHP * 0.15));
+const healed = applyHealFlat(a, healAmt);
+appendLogHTML(`${a.name} throws <b>Smoke Bomb</b>!... recovers ${healed} HP.`);
 
-    appendLogHTML(`${a.name} throws <b>Smoke Bomb</b>! ${n} enemies are blinded this round. ${a.name} recovers ${healed} HP.`);
-  }
-}
+ }}
 
     ];
 
@@ -693,14 +688,17 @@ case 'Cleric': return [
     speed: 'fast', type: 'mag', target: 'ally',
     heal: { min: 25, max: 45 }, healCoef: 0.25, scalesWith: 'SDM',
     use: (a, t) => {
+      // 1) Buff
       const dur = buffDurBySDM(a);
       pushStatus(t, { key: 'def_up', dur });
-      const H = computeAbilityHeal(a, t, { heal: { min: 25, max: 45 }, healCoef: 0.25, scalesWith: 'SDM', type: 'mag' });
-      const before = t.hp;
-      t.hp = clamp(t.hp + H, 0, t.maxHP);
-      const healed = t.hp - before;
-      t._refresh && t._refresh(); checkHPWarnings(t);
-      appendLog(`${a.name} blesses ${t.name} with a Defensive Aura: DEF↑ (${dur}), healed for ${healed}.`);
+
+      // 2) Heal (use the ability’s own heal stats so there's only ONE source of truth)
+      const H = computeAbilityHeal(a, t, this);
+
+      // ✅ helper does clamp + refresh + warnings + heal VFX (if you built it that way)
+      const out = applyHeal(a, t, H, { abilityName: this.label, kind: 'mag' });
+
+      appendLog(`${a.name} blesses ${t.name} with ${this.label}: DEF↑ (${dur}), healed for ${out.healed}.`);
     }
   },
 
@@ -712,23 +710,47 @@ case 'Cleric': return [
     use: function(a, t){ return hit(a, t, { ability: this }); }
   },
 
-  {
-    label: `Enid's Blessing`,
-    desc: 'Heal all allies and cure poison.',
-    speed: 'slow', type: 'mag', target: 'all-allies',
-    heal: { min: 25, max: 55 }, healCoef: 0.40, scalesWith: 'SDM',
-    use: (a, arr) => {
-      for (const ally of arr){
-        if (!ally.alive()) continue;
-        const H = computeAbilityHeal(a, ally, { heal:{ min:25, max:55 }, healCoef:0.40, scalesWith:'SDM', type:'mag' });
-        const before = ally.hp;
-        ally.hp = clamp(ally.hp + H, 0, ally.maxHP);
+{
+  label: `Enid's Blessing`,
+  desc: 'Heal all allies and cure poison.',
+  speed: 'slow', type: 'mag', target: 'all-allies',
+  heal: { min: 25, max: 55 }, healCoef: 0.40, scalesWith: 'SDM',
+  use: function(a, arr){
+    let healedTotal = 0;
+    let curedCount  = 0;
+
+    for (const ally of (arr || [])){
+      if (!ally?.alive?.()) continue;
+
+      // Heal using THIS ability's heal stats (no duplicated numbers)
+      const H = computeAbilityHeal(a, ally, this);
+
+      const before = ally.hp;
+      ally.hp = clamp(ally.hp + H, 0, ally.maxHP);
+      const healed = ally.hp - before;
+      healedTotal += healed;
+
+      // Cure poison (count only if it actually removed something)
+      const wasPoisoned = hasStatus(ally, 'poison');
+      if (wasPoisoned){
         removeStatusKey(ally, 'poison');
-        ally._refresh && ally._refresh(); checkHPWarnings(ally);
-        appendLog(`${a.name} channels Enid’s Blessing: ${ally.name} healed for ${ally.hp - before} and cured of poison.`);
+        curedCount++;
+        // Optional: if you want a “cure” pop even before applyHeal exists
+        vfxStatus?.(ally, 'cure', { kind:'buff' });
       }
+
+      ally._refresh && ally._refresh();
+      checkHPWarnings(ally);
+
+      // Per-ally line (keeps clarity in combat log)
+      appendLog(`${a.name} channels Enid’s Blessing: ${ally.name} healed for ${healed}${wasPoisoned ? ' and cured of poison' : ''}.`);
     }
-  },
+
+    // Optional: one summary line (comment out if you prefer only per-ally logs)
+    // appendLog(`${a.name} finishes Enid’s Blessing: total healed ${healedTotal}, poison cured on ${curedCount} ally(ies).`);
+  }
+},
+
 
   {
     label: 'Piercing Light',
@@ -738,30 +760,68 @@ case 'Cleric': return [
     use: function(a, t){ return hit(a, t, { ability: this }); }
   },
 
-  {
-    label: 'Resurrection',
-    desc: 'Revive a fallen ally (once) or heal if alive.',
-    speed: 'slow', type: 'mag', target: 'ally', allowDeadTarget: true,
-    use: (a, t) => {
-      if (a._rezUsed){
-        appendLog(`${a.name} has already used Resurrection.`);
-        return;
-      }
-      if (t.alive()){
-        const H = computeAbilityHeal(a, t, { heal:{ min:20, max:40 }, healCoef:0.30, scalesWith:'SDM', type:'mag' });
-        const before = t.hp;
-        t.hp = clamp(t.hp + H, 0, t.maxHP);
-        t._refresh && t._refresh(); checkHPWarnings(t);
-        appendLog(`${t.name} is already alive — healed for ${t.hp - before}.`);
-      } else {
-        t.hp = Math.max(1, Math.floor(t.maxHP * 0.35));
-        removeStatusKey(t, 'poison');
-        t._refresh && t._refresh(); checkHPWarnings(t);
-        appendLogHTML(`<span style="color:#a7c4ff">✝ ${a.name} resurrects ${t.name} with ${t.hp} HP!</span>`);
-        a._rezUsed = true;
-      }
+{
+  label: 'Resurrection',
+  desc: 'Revive a fallen ally (once) or heal if alive.',
+  speed: 'slow', type: 'mag', target: 'ally',
+  allowDeadTarget: true,
+
+  // Optional: keep heal numbers on the ability so you can reuse `this`
+  heal: { min: 20, max: 40 }, healCoef: 0.30, scalesWith: 'SDM',
+
+  use: function(a, t){
+    if (!t) return;
+
+    // One-time revive gate
+    if (a._rezUsed && !t.alive?.()){
+      appendLog(`${a.name} has already used Resurrection.`);
+      return;
     }
-  },
+
+    // If alive: treat as a normal heal using THIS ability's heal stats
+    if (t.alive?.()){
+      const H = computeAbilityHeal(a, t, this);
+      const before = t.hp;
+
+      t.hp = clamp(t.hp + H, 0, t.maxHP);
+      const healed = t.hp - before;
+
+      t._refresh && t._refresh();
+      checkHPWarnings(t);
+
+      // VFX (if you've got these helpers)
+      vfxActCue?.(a, this.label);
+      vfxHeal?.(t, healed);           // if you added it
+      vfxFloatText?.(t, `+${healed}`, { ms: (VFX?.FLOAT_MS ?? 1500), fontSize: 22 });
+
+      appendLog(`${a.name} invokes Resurrection on ${t.name} — healed for ${healed}.`);
+      return;
+    }
+
+    // If dead: revive with % HP, cure poison, reset KO latches
+    const reviveHP = Math.max(1, Math.floor(t.maxHP * 0.35));
+    t.hp = reviveHP;
+
+    // Clear poison + any “dead state” flags so KO can happen again later
+    removeStatusKey(t, 'poison');
+    t._didKOVFX   = false;
+    t._deadLogged = false;
+
+    t._refresh && t._refresh();
+    checkHPWarnings(t);
+
+    // VFX (optional)
+    vfxActCue?.(a, this.label);
+    vfxResurrect?.(t); // if you add one later, otherwise this is harmless
+    vfxFlashColor?.(t, { color: 0xa7c4ff, ms: 650, alpha: 0.25 });
+    vfxFloatText?.(t, `REVIVE ${reviveHP}`, { ms: 1500, fontSize: 22 });
+
+    appendLogHTML(`<span style="color:#a7c4ff">✝ ${a.name} resurrects ${t.name} with ${reviveHP} HP!</span>`);
+
+    a._rezUsed = true;
+  }
+},
+
 ];
 
 
@@ -799,19 +859,52 @@ case 'Cleric': return [
        use:function(a,t){ const r=hit(a,t,{ability:this}); if(t.alive() && rand()<0.25){ const dur=ccDurBySDM(a);
          applyStatusWithLog(t,'stun',dur,'#b084ff',`${t.name} is smacked with the Crusader Shield and stunned for {dur} rounds!`);} return r; } },
 
-      {label:'Cleanse', desc:'Remove ailments and heal small wounds.', speed:'normal', type:'mag', target:'ally',
- heal:{min:15,max:20}, healCoef:0.50, scalesWith:'SDM',
- use:function(a,t){
-   const removed = cleanseCCAndDebuffs(t);
-   const H = computeAbilityHeal(a,t,this);
-   const before = t.hp;
-   t.hp = clamp(t.hp + H, 0, t.maxHP);
-   const healed = t.hp - before;
-   t._refresh && t._refresh(); if (typeof checkHPWarnings==='function') checkHPWarnings(t);
-   const removedText = removed ? ' ailments removed,' : '';
-   appendLog(`${a.name} casts Cleanse on ${t.name}:${removedText} healed for ${healed}.`);
-}},
+      {
+  label:'Cleanse',
+  desc:'Remove ailments and heal small wounds.',
+  speed:'normal', type:'mag', target:'ally',
+  heal:{min:15,max:20}, healCoef:0.50, scalesWith:'SDM',
 
+  use:function(a,t){
+    if (!t) return;
+
+    // 1) Cleanse first (so UI/VFX shows the cure before the heal number)
+    const removed = cleanseCCAndDebuffs(t);
+
+    // 2) Heal using this ability's heal stats
+    const H = computeAbilityHeal(a, t, this);
+    const before = t.hp;
+    t.hp = clamp(t.hp + H, 0, t.maxHP);
+    const healed = t.hp - before;
+
+    // 3) If they were previously KO'd, this is still not a "revive" — but we can
+    // safely reset KO latches if they are alive now (helps KO→revive→KO loop)
+    if (t.hp > 0){
+      t._didKOVFX = false;
+      t._deadLogged = false;
+    }
+
+    t._refresh && t._refresh();
+    if (typeof checkHPWarnings==='function') checkHPWarnings(t);
+
+    // 4) VFX (optional helpers; safe if not defined)
+    vfxActCue?.(a, this.label);
+
+    // If you have a status VFX helper, call it for the "cleanse" moment
+    if (removed){
+      vfxStatus?.(t, 'cleanse', { kind:'buff' }); // purely cosmetic tag
+      vfxFlashColor?.(t, { color: 0xa7c4ff, ms: 500, alpha: 0.20 });
+      vfxFloatText?.(t, 'CLEANSE', { ms: 1500, fontSize: 22 });
+    }
+
+    // Heal pop
+    vfxHeal?.(t, healed);
+    vfxFloatText?.(t, `+${healed}`, { ms: (VFX?.FLOAT_MS ?? 1500), fontSize: 22 });
+
+    const removedText = removed ? ' ailments removed,' : '';
+    appendLog(`${a.name} casts Cleanse on ${t.name}:${removedText} healed for ${healed}.`);
+  }
+},
 
       {label:'Sanctify', desc:'Smite all enemies.', speed:'slow', type:'mag', target:'all-enemies',
        base:{min:20,max:60}, statCoef:0.40,
@@ -823,18 +916,49 @@ case 'Cleric': return [
 
     /* ===== Archer ===== */
     case 'Archer': return [
-      {label:`Ranger's Focus`, desc:'Heal an ally and boost their attack.', speed:'normal', type:'mag', target:'ally',
-       heal:{min:25,max:35}, healCoef:0.25, scalesWith:'ATK',
-       use:(a,t)=>{
-  const dur = buffDurBySDM(a);
-  pushStatus(t,{key:'atk_up', dur});
-  const H = computeAbilityHeal(a,t,{ heal:{min:20,max:30}, healCoef:0.25, scalesWith:'ATK', type:'mag' });
-  const before = t.hp;
-  t.hp = clamp(t.hp + H, 0, t.maxHP);
-  const healed = t.hp - before;
-  t._refresh && t._refresh(); checkHPWarnings(t);
-  appendLog(`${a.name} focuses ${t.name}: ATK↑ (${dur}), healed for ${healed}.`);
-}},
+      {
+  label:`Ranger's Focus`,
+  desc:'Heal an ally and boost their attack.',
+  speed:'normal', type:'mag', target:'ally',
+  heal:{min:25,max:35}, healCoef:0.25, scalesWith:'ATK',
+
+  use:(a,t)=>{
+    if (!t) return;
+
+    // 1) Buff
+    const dur = buffDurBySDM(a);
+    pushStatus(t,{ key:'atk_up', dur });
+
+    // 2) Heal (use THIS ability's heal fields so numbers stay consistent)
+    const H = computeAbilityHeal(a, t, this);
+    const before = t.hp;
+    t.hp = clamp(t.hp + H, 0, t.maxHP);
+    const healed = t.hp - before;
+
+    // If heal brought them back above 0 (edge cases), clear KO latches
+    if (t.hp > 0){
+      t._didKOVFX = false;
+      t._deadLogged = false;
+    }
+
+    t._refresh && t._refresh();
+    checkHPWarnings?.(t);
+
+    // 3) VFX (safe-optional)
+    vfxActCue?.(a, this.label);
+
+    // show buff pop
+    vfxStatus?.(t, 'atk_up', { dur, kind:'buff' });
+    vfxFlashColor?.(t, { color: 0xa7ffb5, ms: 450, alpha: 0.18 });
+    vfxFloatText?.(t, `ATK↑ ${dur}`, { ms: 1500, fontSize: 14 });
+
+    // show heal pop
+    vfxHeal?.(t, healed);
+    vfxFloatText?.(t, `+${healed}`, { ms: (VFX?.FLOAT_MS ?? 1500), fontSize: 22 });
+
+    appendLog(`${a.name} focuses ${t.name}: ATK↑ (${dur}), healed for ${healed}.`);
+  }
+},
 
       {label:'Attack', desc:'Loose a quick arrow.', speed:'fast', type:'phys', target:'enemy',
        base:{min:45,max:55}, statCoef:0.40, isBasic:true,
@@ -889,21 +1013,111 @@ case 'Cleric': return [
         return r;
        }},
 
-      {label:'Life Drain', desc:'Steal life from a foe.', speed:'normal', type:'mag', target:'enemy',
-       base:{min:25,max:55}, statCoef:0.35,
-       use:function(a,t){
-         const res = computeAbilityDamage(a,t,this);
-         if (res.dodged || !res.hit){ appendLog(`${a.name}'s Life Drain fails to take hold.`); return; }
-         const dealt = Math.max(1, res.dmg);
-         t.hp = clamp(t.hp - dealt, 0, t.maxHP);
-         a.hp = clamp(a.hp + dealt, 0, a.maxHP);
-         t._refresh&&t._refresh(); a._refresh&&a._refresh(); checkHPWarnings(t); checkHPWarnings(a);
-         if (res.crit){
-           appendLogHTML(`${a.name}’s spell lands a <span style="color:gold">critical</span> drain! ${t.name} loses ${dealt}. ${a.name} is healed for ${dealt}.`);
-         } else {
-           appendLog(`Life Drain siphons ${dealt} from ${t.name}. ${a.name} is healed for ${dealt}.`);
-         }
-       }},
+      {
+  label:'Life Drain',
+  desc:'Steal life from a foe.',
+  speed:'normal', type:'mag', target:'enemy',
+  base:{min:25,max:55}, statCoef:0.35,
+
+  use:function(a,t){
+    if (!a || !t) return;
+
+    // Compute (same as hit() path, but this is a self-contained drain)
+    const res = computeAbilityDamage(a, t, this);
+
+    // If dodged: show travel + dodge on target (clarity)
+    if (res.dodged){
+      const abType = res._type || getAbilityType(a, this);
+      const projMs = (abType === 'mag') ? Math.floor((VFX?.PROJ_MS ?? 260) * 1.15) : (VFX?.PROJ_MS ?? 260);
+
+      vfxActCue?.(a, this.label);
+      vfxProjectile?.(a, t, { ms: projMs, color: 0xa7c4ff, radius: 6 });
+
+      const scene = getScene?.();
+      const impactDelay = Math.max(0, Math.floor(projMs * 0.75));
+      const doDodge = () => vfxDodge?.(t);
+
+      if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doDodge);
+      else doDodge();
+
+      appendLogHTML(`${t.name} <span style="color:skyblue">dodges</span> ${a.name}’s Life Drain!`);
+      return;
+    }
+
+    if (!res.hit || (res.dmg|0) <= 0){
+      vfxActCue?.(a, this.label);
+      vfxFloatText?.(t, 'RESIST', { ms: 900, fontSize: 14 });
+      appendLog(`${a.name}'s Life Drain fails to take hold.`);
+      return;
+    }
+
+    const dealt = Math.max(1, res.dmg|0);
+
+    // Apply drain
+    const tBefore = t.hp;
+    const aBefore = a.hp;
+
+    t.hp = clamp(t.hp - dealt, 0, t.maxHP);
+    a.hp = clamp(a.hp + dealt, 0, a.maxHP);
+
+    // Clear KO latches if healed above 0 (edge cases)
+    if (a.hp > 0){ a._didKOVFX = false; a._deadLogged = false; }
+
+    t._refresh?.(); a._refresh?.();
+    checkHPWarnings?.(t); checkHPWarnings?.(a);
+
+    // VFX sequence: attacker cue → travel → impact → heal pop
+    const projMs = Math.floor((VFX?.PROJ_MS ?? 260) * 1.15);
+    const scene = getScene?.();
+    const impactDelay = Math.max(0, Math.floor(projMs * 0.90));
+
+    vfxActCue?.(a, this.label);
+    vfxProjectile?.(a, t, { ms: projMs, color: 0xa7c4ff, radius: 6 });
+
+    const finalT = t;
+    const finalA = a;
+    const crit   = !!res.crit;
+
+    const doImpact = () => {
+      // Target takes damage (use your unified helpers if present)
+      if (typeof vfxDamage === 'function') vfxDamage(finalT, dealt, { crit, kind:'drain' });
+      else {
+        vfxFlashColor?.(finalT, { color: 0xa7c4ff, ms: 450, alpha: 0.18 });
+        vfxShakePanel?.(finalT, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 220) });
+        vfxFlashPanel?.(finalT, { ms: (VFX?.FLASH_MS ?? 180) });
+        vfxFloatText?.(finalT, `-${dealt}`, { ms: (VFX?.FLOAT_MS ?? 900), fontSize: crit ? 28 : 20 });
+      }
+
+      // Attacker gets healed
+      vfxHeal?.(finalA, dealt);
+      vfxFlashColor?.(finalA, { color: 0xa7ffb5, ms: 450, alpha: 0.16 });
+      vfxFloatText?.(finalA, `+${Math.max(0, finalA.hp - aBefore)}`, { ms: (VFX?.FLOAT_MS ?? 900), fontSize: 18 });
+
+      // KO announcement + KO VFX if drain killed them
+      if (tBefore > 0 && finalT.hp <= 0){
+        appendLogHTML(`<span style="color:#ff6b6b">☠ ${finalT.name} is down!</span>`);
+        if (!finalT._didKOVFX){
+          finalT._didKOVFX = true;
+          vfxKO?.(finalT);
+        }
+        finalT._refresh?.();
+      } else {
+        finalT._didKOVFX = false;
+      }
+    };
+
+    if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doImpact);
+    else doImpact();
+
+    // Log
+    if (res.crit){
+      appendLogHTML(`${a.name}’s Life Drain lands a <span style="color:gold">critical</span> siphon! ${t.name} loses ${dealt}. ${a.name} is healed for ${Math.max(0, a.hp - aBefore)}.`);
+    } else {
+      appendLog(`Life Drain siphons ${dealt} from ${t.name}. ${a.name} is healed for ${Math.max(0, a.hp - aBefore)}.`);
+    }
+  }
+},
+
 
       {label:'Plague', desc:'Afflict all foes with massive poison.', speed:'slow', type:'mag', target:'all-enemies',
        base:{min:10,max:60}, statCoef:0.30,
@@ -1063,34 +1277,33 @@ function vfxShakePanel(u, { px=6, ms=160 } = {}){
   });
 }
 
-function vfxFloatText(u, text, { ms=650, fontSize=20 } = {}){
+function vfxFloatText(u, text, { ms=900, fontSize=22, color='#ffffff', stroke='#000000', rise=26, dx=0 } = {}){
   const scene = getScene();
   const pos = panelCenterWorld(u);
   if (!scene || !pos) return;
 
-  const t = scene.add.text(pos.x, pos.y, text, {
+  // small stack offset so multiple pops don't sit on top of each other
+  u._vfxPopN = (u._vfxPopN || 0) + 1;
+  const stackOffset = Math.min(3, u._vfxPopN - 1) * 14;
+
+  const t = scene.add.text(pos.x + dx, pos.y - stackOffset, text, {
     fontFamily: 'monospace',
     fontSize: `${fontSize}px`,
     fontStyle: 'bold',
-    color: '#ffffff',
-    stroke: '#000000',
+    color,
+    stroke,
     strokeThickness: 4
-  })
-  .setOrigin(0.5, 0.5)
-  .setDepth(999999)          // really high, above your panels
-  .setScrollFactor(0)        // if you ever add camera movement, text stays stable
-  .setAlpha(1);
+  }).setOrigin(0.5, 0.5).setDepth(9999);
 
-  // kill any tweens on it before destroying (prevents tween errors if scene restarts)
   scene.tweens.add({
     targets: t,
-    y: pos.y - 26,
+    y: t.y - rise,
     alpha: 0,
     duration: ms,
     ease: 'Quad.easeOut',
     onComplete: () => {
-      if (scene && scene.tweens) scene.tweens.killTweensOf(t);
       t.destroy();
+      u._vfxPopN = Math.max(0, (u._vfxPopN || 1) - 1);
     }
   });
 }
@@ -1146,22 +1359,113 @@ window.vfxKO           = window.vfxKO           || vfxKO;
 if (typeof vfxFlashColor === 'function') window.vfxFlashColor = window.vfxFlashColor || vfxFlashColor;
 if (typeof vfxActCue    === 'function')  window.vfxActCue     = window.vfxActCue     || vfxActCue;
 
-/* ===== PART 2/4 — ENGINE HELPERS ===== */
+function vfxDamage(u, amount, { crit=false } = {}){
+  const col = crit ? VFX_COL.crit : VFX_COL.dmg;
+  vfxFloatText(u, `-${amount}`, { color: col, fontSize: crit ? 28 : 20, ms: (VFX?.FLOAT_MS ?? 1500) });
+  vfxFlashPanel(u, { ms: (VFX?.FLASH_MS ?? 250) });
+  vfxShakePanel(u, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 250) });
+}
 
+function vfxDodge(u){
+  // dodge reads best as "blue ping + DODGE"
+  vfxFlashColor?.(u, { color: 0x7ad7ff, ms: 260, alpha: 0.22 });
+  vfxFloatText(u, `DODGE`, { color: VFX_COL.dodge, fontSize: 22, ms: 1500 });
+}
+
+function vfxStatus(u, key, { dur=null, kind='cc' } = {}){
+  const label = VFX_TEXT[key] || key.toUpperCase();
+  const col =
+    (key === 'poison') ? VFX_COL.poison :
+    (kind === 'cc')    ? VFX_COL.cc :
+    (kind === 'buff')  ? VFX_COL.buff :
+    (kind === 'debuff')? VFX_COL.debuff :
+                         '#ffffff';
+
+  // flash color overlay + label pop
+  if (typeof vfxFlashColor === 'function'){
+    const hex =
+      (key === 'poison') ? 0x57ff7a :
+      (kind === 'cc')    ? 0xff6bd6 :
+      (kind === 'buff')  ? 0xa7c4ff :
+      (kind === 'debuff')? 0xffb36b : 0xffffff;
+    vfxFlashColor(u, { color: hex, ms: 260, alpha: 0.18 });
+  } else {
+    vfxFlashPanel(u, { ms: 250 });
+  }
+
+  vfxFloatText(u, dur ? `${label} (${dur})` : label, { color: col, fontSize: 22, ms: 1500 });
+}
+
+function vfxHeal(u, amount){
+  vfxFlashColor?.(u, { color: 0x7CFF9A, ms: 500, alpha: 0.14 });
+  vfxFloatText(u, `+${amount}`, { color: VFX_COL.heal, fontSize: 22, ms: 1500 });
+}
+
+/* ===== PART 2/4 — ENGINE HELPERS ===== */
 /* ---------- Status & stacking ---------- */
 const STACKABLE = new Set(['atk_up','sdm_up','def_up','def_down']);
+
 function hasStatus(u,key){ return u.status && u.status.some(s=>s.key===key); }
+
 function countStacks(u, key){ let n=0; for(const s of (u.status||[])) if (s.key===key) n++; return n; }
+
 function pushStatus(u, st){
-  if (!u || !st) return; if (!u.status) u.status=[];
-  if (STACKABLE.has(st.key)){ const dur=Math.max(1, st.dur|0); u.status.push({ key:st.key, dur, data:{ stack:1 } }); }
-  else if (st.key==='stun'||st.key==='blind'||st.key==='berserk'||st.key==='taunt'){
-    const existing = u.status.find(s=>s.key===st.key);
-    if (existing){ const cap=CONFIG.CC_MAX_CAP??7; existing.dur=Math.min(cap, existing.dur+Math.floor((st.dur|0)*0.5)); }
-    else { u.status.push({ key:st.key, dur:st.dur|0, data:st.data }); }
-  } else { u.status.push(st); }
+  if (!u || !st) return;
+  if (!u.status) u.status = [];
+
+  const key = st.key;
+  let wasNew = false;
+  let appliedDur = (st.dur|0);
+
+  if (STACKABLE.has(key)) {
+    // stacks are always "new instances"
+    const dur = Math.max(1, st.dur|0);
+    u.status.push({ key, dur, data:{ stack:1 } });
+    wasNew = true;
+    appliedDur = dur;
+
+  } else if (key === 'stun' || key === 'blind' || key === 'berserk' || key === 'taunt') {
+    const existing = u.status.find(s => s.key === key);
+    if (existing) {
+      const cap = CONFIG.CC_MAX_CAP ?? 7;
+      const add = Math.floor((st.dur|0) * 0.5);
+      const before = existing.dur|0;
+      existing.dur = Math.min(cap, (existing.dur|0) + add);
+      appliedDur = existing.dur|0;
+
+      // If duration didn't actually increase, don’t spam VFX
+      wasNew = (existing.dur|0) > before;
+    } else {
+      u.status.push({ key, dur: (st.dur|0), data: st.data });
+      wasNew = true;
+      appliedDur = (st.dur|0);
+    }
+
+  } else {
+    // non-stack, non-CC
+    u.status.push(st);
+    wasNew = true;
+    appliedDur = (st.dur|0);
+  }
+
   updateStatusView(u);
+
+  // VFX: only on meaningful application
+  if (wasNew && typeof vfxStatus === 'function') {
+    try {
+      if (key === 'poison') {
+        vfxStatus(u, 'poison', { kind:'debuff' });
+      } else if (key === 'stun' || key === 'taunt' || key === 'blind' || key === 'berserk') {
+        vfxStatus(u, key, { dur: appliedDur, kind:'cc' });
+      } else if (key === 'def_down' || key === 'marked') {
+        vfxStatus(u, key, { dur: appliedDur, kind:'debuff' });
+      } else if (key === 'def_up' || key === 'atk_up' || key === 'sdm_up' || key === 'guard' || key === 'divine_shield') {
+        vfxStatus(u, key, { dur: appliedDur, kind:'buff' });
+      }
+    } catch {}
+  }
 }
+
 function removeStatusKey(u, key){
   if (!u || !u.status) return false;
   const before=u.status.length; u.status=u.status.filter(s=>s.key!==key);
@@ -1172,6 +1476,15 @@ function cleanseCCAndDebuffs(u){
   if (!u || !u.status) return false; const before=u.status.length;
   u.status=u.status.filter(s=>!toStrip.has(s.key)); if (u._refresh) u._refresh();
   return u.status.length!==before;
+}
+
+function syncDeathState(u){
+  if (!u) return;
+  if (u.hp > 0){
+    // revived / alive again => allow future KO VFX to fire
+    u._didKOVFX = false;
+    u._deadLogged = false;
+  }
 }
 
 function everyoneInNetOrder(){
@@ -1306,8 +1619,28 @@ function computeAbilityHeal(caster, target, ability){
   return H|0;
 }
 
+function applyHeal(caster, target, amount, { abilityName='Heal' } = {}){
+  if (!caster || !target) return { healed:0 };
+  if (amount <= 0) return { healed:0 };
 
+  const before = target.hp;
+  target.hp = clamp(target.hp + amount, 0, target.maxHP);
+  const healed = target.hp - before;
 
+  if (healed > 0){
+    target._refresh && target._refresh();
+    checkHPWarnings && checkHPWarnings(target);
+
+    // VFX: show who cast + who received
+    vfxActCue?.(caster, abilityName);
+
+    // Green impact on the healed unit
+    vfxFlashColor?.(target, { color: 0x57ff7a, ms: 300, alpha: 0.22 });
+    vfxFloatText?.(target, `+${healed}`, { ms: (VFX?.FLOAT_MS ?? 1500), fontSize: 22 });
+  }
+
+  return { healed };
+}
 
 /* lightweight raw calc */
 function calcDamage(a,t,opt){
@@ -1320,35 +1653,173 @@ function calcDamage(a,t,opt){
 
 /* ---------- procs on basic ---------- */
 function maybeProcOnBasic(attacker, target){
-  const cfg=CONFIG.PROC?.[attacker.job]; if(!cfg||rand()>=(cfg.chance??0)) return;
+  const cfg = CONFIG.PROC?.[attacker.job];
+  if (!cfg || rand() >= (cfg.chance ?? 0)) return;
+
   switch(attacker.job){
-    case 'Cleric':{
-      const heal=Math.max(1, Math.floor((6+randInt(0,5)) + attacker.SDM*0.20));
-      const total=Math.floor(heal*(CONFIG.DAMAGE_GLOBAL||1));
-      attacker.hp=clamp(attacker.hp+total,0,attacker.maxHP); attacker._refresh&&attacker._refresh(); checkHPWarnings(attacker);
-      appendLogHTML(`<span style="color:#a7c4ff">✨ A prayer mends ${attacker.name} for ${total}.</span>`); break;
-    }
-    case 'Mage':{
-      const bolt={label:'Lightning Bolt (proc)', type:'mag', speed:'fast', base:{min:10,max:20}, scalesWith:'SDM', statCoef:0.35, defPen:0.10};
-      const r=computeAbilityDamage(attacker,target,bolt); if(r.hit){ target.hp=clamp(target.hp-r.dmg,0,target.maxHP);
-        target._refresh&&target._refresh(); checkHPWarnings(target);
-        appendLogHTML(`<span style="color:#a7c4ff">⚡ A lightning bolt zaps ${target.name} for ${r.dmg}!</span>`); }
+
+    /* =========================
+       CLERIC PROC: self-heal
+       ========================= */
+    case 'Cleric': {
+      const heal = Math.max(1, Math.floor((6 + randInt(0,5)) + attacker.SDM * 0.20));
+      const total = Math.floor(heal * (CONFIG.DAMAGE_GLOBAL || 1));
+
+      const before = attacker.hp;
+      attacker.hp = clamp(attacker.hp + total, 0, attacker.maxHP);
+      const healed = attacker.hp - before;
+
+      attacker._refresh && attacker._refresh();
+      checkHPWarnings(attacker);
+
+      // VFX: heal indicator over cleric
+      try {
+        vfxActCue?.(attacker, 'Proc');
+        // green flash overlay if you have vfxFlashColor
+        vfxFlashColor?.(attacker, { color: 0xa7ffb5, ms: 450, alpha: 0.16 });
+        vfxFloatText?.(attacker, `+${healed}`, { ms: (VFX?.FLOAT_MS ?? 1500), fontSize: 22 });
+      } catch {}
+
+      appendLogHTML(`<span style="color:#a7c4ff">✨ A prayer mends ${attacker.name} for ${healed}.</span>`);
       break;
     }
-    case 'Monk':{ const dur=buffDurBySDM(attacker); pushStatus(attacker,{key:'atk_up',dur});
-      appendLogHTML(`<span style="color:#a7c4ff">🌀 ${attacker.name} finds an opening: ATK↑ (${dur}).</span>`); break; }
-    case 'Mystic':{ if(!target||!target.alive()) return; const dur=buffDurBySDM(attacker);
-      pushStatus(target,{key:'def_down',dur}); appendLogHTML(`<span style="color:#a7c4ff">🪄 ${target.name}'s guard falters: DEF↓ (${dur}).</span>`); break; }
-    case 'Necromancer':{
-      const drip={label:'Life Drip (proc)', type:'mag', speed:'fast', base:{min:10,max:15}, scalesWith:'SDM', statCoef:0.30};
-      const r=computeAbilityDamage(attacker,target,drip);
-      if(r.hit){ target.hp=clamp(target.hp-r.dmg,0,target.maxHP); attacker.hp=clamp(attacker.hp+r.dmg,0,attacker.maxHP);
-        target._refresh&&target._refresh(); attacker._refresh&&attacker._refresh(); checkHPWarnings(target); checkHPWarnings(attacker);
-        appendLogHTML(`<span style="color:#a7c4ff">🩸 A dark sip steals ${r.dmg} from ${target.name}.</span>`); }
+
+    /* =========================
+       MAGE PROC: unchanged
+       ========================= */
+    case 'Mage': {
+      const bolt = {label:'Lightning Bolt (proc)', type:'mag', speed:'fast', base:{min:10,max:20}, scalesWith:'SDM', statCoef:0.35, defPen:0.10};
+      const r = computeAbilityDamage(attacker, target, bolt);
+      if (r.hit){
+        target.hp = clamp(target.hp - r.dmg, 0, target.maxHP);
+        target._refresh && target._refresh();
+        checkHPWarnings(target);
+        appendLogHTML(`<span style="color:#a7c4ff">⚡ A lightning bolt zaps ${target.name} for ${r.dmg}!</span>`);
+      }
       break;
     }
-    case 'Paladin':{ const dur=buffDurBySDM(attacker); pushStatus(attacker,{key:'def_up',dur});
-      appendLogHTML(`<span style="color:#a7c4ff">🛡️ ${attacker.name}'s resolve hardens: DEF↑ (${dur}).</span>`); break; }
+
+    /* =========================
+       MONK PROC: unchanged
+       ========================= */
+    case 'Monk': {
+      const dur = buffDurBySDM(attacker);
+      pushStatus(attacker, { key:'atk_up', dur });
+      appendLogHTML(`<span style="color:#a7c4ff">🌀 ${attacker.name} finds an opening: ATK↑ (${dur}).</span>`);
+      break;
+    }
+
+    /* =========================
+       MYSTIC PROC: unchanged
+       ========================= */
+    case 'Mystic': {
+      if (!target || !target.alive()) return;
+      const dur = buffDurBySDM(attacker);
+      pushStatus(target, { key:'def_down', dur });
+      appendLogHTML(`<span style="color:#a7c4ff">🪄 ${target.name}'s guard falters: DEF↓ (${dur}).</span>`);
+      break;
+    }
+
+    /* =========================
+       NECROMANCER PROC: drain
+       - damage pop over target
+       - heal pop over necro
+       - optional travel projectile + delayed impact
+       ========================= */
+    case 'Necromancer': {
+      if (!target || !target.alive()) return;
+
+      const drip = {label:'Life Drip (proc)', type:'mag', speed:'fast', base:{min:10,max:15}, scalesWith:'SDM', statCoef:0.30};
+      const r = computeAbilityDamage(attacker, target, drip);
+
+      // Miss/dodge
+      if (!r.hit || r.dodged || (r.dmg|0) <= 0){
+        // Optional: travel then dodge cue if it was a dodge
+        try {
+          if (r.dodged){
+            const scene = getScene?.();
+            const projMs = Math.floor((VFX?.PROJ_MS ?? 500) * 1.15);
+            vfxActCue?.(attacker, 'Proc');
+            vfxProjectile?.(attacker, target, { ms: projMs, color: 0xa7c4ff, radius: 6 });
+
+            const impactDelay = Math.max(0, Math.floor(projMs * 0.75));
+            const doDodge = () => vfxDodge?.(target);
+            if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doDodge);
+            else doDodge();
+          }
+        } catch {}
+
+        appendLog(`${attacker.name}'s Life Drip fails to take hold.`);
+        break;
+      }
+
+      const dealt = Math.max(1, r.dmg|0);
+
+      const tBefore = target.hp;
+      const aBefore = attacker.hp;
+
+      target.hp = clamp(target.hp - dealt, 0, target.maxHP);
+      attacker.hp = clamp(attacker.hp + dealt, 0, attacker.maxHP);
+
+      const healed = attacker.hp - aBefore;
+
+      target._refresh && target._refresh();
+      attacker._refresh && attacker._refresh();
+      checkHPWarnings(target);
+      checkHPWarnings(attacker);
+
+      // VFX: attacker cue -> travel -> delayed impact pops
+      try {
+        const scene = getScene?.();
+        const projMs = Math.floor((VFX?.PROJ_MS ?? 500) * 1.15);
+        const impactDelay = Math.max(0, Math.floor(projMs * 0.90));
+
+        vfxActCue?.(attacker, 'Proc');
+        vfxProjectile?.(attacker, target, { ms: projMs, color: 0xa7c4ff, radius: 6 });
+
+        const finalT = target;
+        const finalA = attacker;
+        const crit   = !!r.crit;
+
+        const doImpact = () => {
+          // damage on target
+          vfxFlashColor?.(finalT, { color: 0xa7c4ff, ms: 550, alpha: 0.18 });
+          vfxFloatText?.(finalT, `-${dealt}`, { ms: (VFX?.FLOAT_MS ?? 900), fontSize: crit ? 28 : 20 });
+
+          // heal on necro
+          vfxFlashColor?.(finalA, { color: 0xa7ffb5, ms: 550, alpha: 0.16 });
+          vfxFloatText?.(finalA, `+${healed}`, { ms: (VFX?.FLOAT_MS ?? 900), fontSize: 18 });
+
+          // KO if this proc killed them
+          if (tBefore > 0 && finalT.hp <= 0){
+            appendLogHTML(`<span style="color:#ff6b6b">☠ ${finalT.name} is down!</span>`);
+            if (!finalT._didKOVFX){ finalT._didKOVFX = true; vfxKO?.(finalT); }
+            finalT._refresh?.();
+          } else {
+            finalT._didKOVFX = false;
+          }
+        };
+
+        if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doImpact);
+        else doImpact();
+      } catch {}
+
+      // Log text
+      if (r.crit){
+        appendLogHTML(`<span style="color:#a7c4ff">🩸 A <span style="color:gold">critical</span> sip steals ${dealt} from ${target.name}.</span>`);
+      } else {
+        appendLogHTML(`<span style="color:#a7c4ff">🩸 A dark sip steals ${dealt} from ${target.name}.</span>`);
+      }
+
+      break;
+    }
+
+    case 'Paladin': {
+      const dur = buffDurBySDM(attacker);
+      pushStatus(attacker, { key:'def_up', dur });
+      appendLogHTML(`<span style="color:#a7c4ff">🛡️ ${attacker.name}'s resolve hardens: DEF↑ (${dur}).</span>`);
+      break;
+    }
   }
 }
 
@@ -1396,6 +1867,39 @@ function tryShrug(u,key){
     if(u.status.length!==before){ const msgFn=SHRUG_MESSAGES[key]; if(msgFn) appendLog(msgFn(u)); updateStatusView(u); }
     return true;
   } return false;
+}
+
+function applyHeal(caster, target, healSpecOrAbility, {
+  label = 'Heal',
+  showVFX = true,
+  curePoison = false
+} = {}){
+  if (!target) return 0;
+
+  const H = computeAbilityHeal(caster, target, healSpecOrAbility);
+  const before = target.hp;
+
+  target.hp = clamp(target.hp + H, 0, target.maxHP);
+
+  // If we revived them elsewhere and they were at 0, your alive() may depend on hp>0.
+  // This function does NOT auto-revive; it only heals.
+
+  const healed = target.hp - before;
+
+  if (curePoison) removeStatusKey(target, 'poison');
+
+  target._refresh && target._refresh();
+  if (typeof checkHPWarnings === 'function') checkHPWarnings(target);
+
+  if (showVFX && healed > 0){
+    try {
+      // green pop + green tint
+      vfxFlashColor?.(target, { color: 0xa7ffb5, ms: 450, alpha: 0.16 });
+      vfxFloatText?.(target, `+${healed}`, { ms: (VFX?.FLOAT_MS ?? 900), fontSize: 18 });
+    } catch {}
+  }
+
+  return healed;
 }
 
 /* === CANONICAL ORDER HELPERS (host→guest, then by name) === */
@@ -1477,6 +1981,41 @@ function endRoundTick(){
         const beforeHP = u.hp;                 // <-- NEW
         u.hp = clamp(u.hp - dealt, 0, u.maxHP);
 syncDeathState(u);
+
+// =========================
+// VFX VOCAB (colors/labels)
+// =========================
+const VFX_COL = {
+  dmg:   '#ffffff',
+  crit:  '#ffd37a',
+  heal:  '#7CFF9A',
+  dodge: '#7ad7ff',
+
+  // hard CC (stun/taunt/blind/berserk) = one family color
+  cc:    '#ff6bd6',
+
+  poison:'#57ff7a',
+  buff:  '#a7c4ff',
+  debuff:'#ffb36b',
+
+  ko:    '#ff6b6b'
+};
+
+const VFX_TEXT = {
+  stun:  'STUNNED',
+  taunt: 'TAUNT',
+  blind: 'BLIND',
+  berserk:'BERSERK',
+  poison:'POISON',
+  guard:'GUARD',
+  divine_shield:'SHIELD',
+  def_up:'DEF↑',
+  def_down:'DEF↓',
+  atk_up:'ATK↑',
+  sdm_up:'SDM↑',
+  marked:'MARKED',
+  counter:'COUNTER'
+};
 
 vfxPoisonTick(u, dealt);
 
@@ -1565,7 +2104,7 @@ const VFX = {
   SHAKE_PX: 7,
   FLASH_MS: 250,    // flash pulse duration
   FLOAT_MS: 1250,    // damage number linger
-  ACT_FLASH_MS: 750 // attacker "acting" ping
+  ACT_FLASH_MS: 500 // attacker "acting" ping
 };
 
 function vfxFlashPanel(u, { ms=120 } = {}){
@@ -1613,11 +2152,25 @@ function hit(a, t, opt={}, verb){
   const abilityName = (a._usingAbilityLabel || (verb ? verb : (ability ? ability.label : (opt.type==='mag'?'spell':'attack'))));
 
   if (res.dodged){
-    vfxFlashPanel(a, { ms: 100 });
-    vfxFlashPanel(target, { ms: 100 });
-    appendLogHTML(`${target.name} <span style="color:skyblue">dodges</span> ${a.name}’s ${abilityName}!`);
-    return {dealt:0,dodged:true,crit:false};
-  }
+  const abType = res?._type || getAbilityType(a, ability);
+  const isMag  = (abType === 'mag');
+  const projMs = isMag ? Math.floor((VFX?.PROJ_MS ?? 260) * 1.15) : (VFX?.PROJ_MS ?? 260);
+  const projColor  = isMag ? 0xa7c4ff : 0xffffff;
+  const projRadius = isMag ? 6 : 5;
+
+  vfxActCue?.(a, abilityName);
+  vfxProjectile(a, target, { ms: projMs, color: projColor, radius: projRadius });
+
+  const scene = getScene();
+  const impactDelay = Math.max(0, Math.floor(projMs * 0.75));
+  const doDodge = () => vfxDodge(target);
+
+  if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doDodge);
+  else doDodge();
+
+  appendLogHTML(`${target.name} <span style="color:skyblue">dodges</span> ${a.name}’s ${abilityName}!`);
+  return {dealt:0,dodged:true,crit:false};
+}
 
   let dmgToApply = res.dmg;
   if (a._echoing) dmgToApply = Math.floor(dmgToApply * (a._echoMult || CONFIG.ECHO_MULT || 1.05));
@@ -1647,27 +2200,51 @@ function hit(a, t, opt={}, verb){
 
   // VFX (ONLY ONCE)
 // ---- VFX + logs + KO + procs (DROP-IN) ----
+// ---- VFX + logs + KO + procs (DROP-IN) ----
 if (dmgToApply > 0){
 
   // Decide “spell vs phys” feel from the already-computed result
   const abType = (res && res._type) ? res._type : getAbilityType(a, ability);
   const isMag  = (abType === 'mag');
 
-  const projMs     = isMag ? Math.floor((VFX?.PROJ_MS ?? 260) * 1.15) : (VFX?.PROJ_MS ?? 260);
+  const projMs     = isMag ? Math.floor((VFX?.PROJ_MS ?? 260) * 1.15) : (VFX?.PROJ_MS ?? 400);
   const projColor  = isMag ? 0xa7c4ff : 0xffffff;
   const projRadius = isMag ? 6 : 5;
 
   // 1) make it clear WHO is acting (attacker cue)
   if (typeof vfxActCue === 'function') vfxActCue(a, abilityName);
-  else vfxFlashPanel(a, { ms: (VFX?.ACT_FLASH_MS ?? 1500) });
+  else vfxFlashPanel(a, { ms: 500 });
+
 
   // 2) readable “travel → impact” sequence
   vfxProjectile(a, target, { ms: projMs, color: projColor, radius: projRadius });
 
-  // (optional) slight delay before impact so travel is readable
+  // delay impact so travel is readable (0.75 feels better than 0.90)
   const impactDelay = Math.max(0, Math.floor(projMs * 0.90));
 
   const scene = getScene();
+
+  // Capture final values NOW (so callback can't drift)
+  const finalTarget = target;
+  const amount      = dmgToApply;
+  const crit        = !!res.crit;
+
+  const doImpact = () => {
+    if (typeof vfxDamage === 'function') {
+      vfxDamage(finalTarget, amount, { crit });
+    } else {
+      vfxShakePanel(finalTarget, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 220) });
+      vfxFlashPanel(finalTarget, { ms: (VFX?.FLASH_MS ?? 250) });
+      vfxFloatText(finalTarget, `-${amount}`, {
+        ms: (VFX?.FLOAT_MS ?? 1500),
+        fontSize: crit ? 28 : 20
+      });
+    }
+  };
+
+  if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doImpact);
+  else doImpact();
+}
 
 if (scene?.time?.delayedCall){
   scene.time.delayedCall(impactDelay, () => {

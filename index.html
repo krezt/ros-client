@@ -343,7 +343,7 @@ function clearActionBar(){ if (actionButtonsEl) actionButtonsEl.innerHTML = ''; 
 
 /* ---------- tiny async helpers ---------- */
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-const SLEEP_TINY_MS=1250, ACTION_DELAY_MS=1250, ACTION_STEP_DELAY_MS=1250, ROUND_END_DELAY_MS=1250;
+const SLEEP_TINY_MS=1250, ACTION_DELAY_MS=2000, ACTION_STEP_DELAY_MS=2000, ROUND_END_DELAY_MS=2000;
 
 /* ---------- RNG (unified, deterministic) ---------- */
 (function(){
@@ -366,15 +366,15 @@ const CONFIG = {
   ATK_PER_STR: 1.5, SDM_PER_INT: 1.5,
   DEF_FROM_TGH: 0.75, DEF_FROM_QKN: 0.75,
 
-  CC_BASE_MIN: 2, CC_BASE_MAX: 4, CC_SDM_PER_BONUS: 15, CC_MAX_CAP: 6,
-  CRIT_BASE: 0.05, CRIT_CAP: 0.40, CRIT_QKN_FACTOR: 0.005, CRIT_INT_FACTOR: 0.005,
+  CC_BASE_MIN: 2, CC_BASE_MAX: 3, CC_SDM_PER_BONUS: 15, CC_MAX_CAP: 5,
+  CRIT_BASE: 0.025, CRIT_CAP: 0.35, CRIT_QKN_FACTOR: 0.005, CRIT_INT_FACTOR: 0.005,
   DODGE_BASE: 0.025, DODGE_QKN_FACTOR: 0.0025, DODGE_CAP: 0.15,
 
-  ARMOR_K: 0.025, DAMAGE_GLOBAL: 1.20,
+  ARMOR_K: 0.025, DAMAGE_GLOBAL: 1.15,
 
-  SHRUG_BASE: 0.05, SHRUG_TGH_FACTOR: 0.0025,
+  SHRUG_BASE: 0.04, SHRUG_TGH_FACTOR: 0.0025,
 
-  BUFF_BASE_MIN: 2, BUFF_BASE_MAX: 5, BUFF_SDM_PER_BONUS: 15, BUFF_MAX_CAP: 7,
+  BUFF_BASE_MIN: 2, BUFF_BASE_MAX: 4, BUFF_SDM_PER_BONUS: 15, BUFF_MAX_CAP: 6,
 
   PROC: {
     Cleric: { chance: 0.5 }, Mage: { chance: 0.5 }, Monk: { chance: 0.6 },
@@ -383,16 +383,16 @@ const CONFIG = {
 
   STACKS: { atk_up:{per:0.5,max:4}, sdm_up:{per:0.5,max:4}, def_up:{per:0.33,max:4}, def_down:{per:0.25,max:4} },
 
-  MARKED_MULT: 2.0,
-  ECHO_MULT: 1.25,
-  SHIELDWALL_GUARD: 0.15,
+  MARKED_MULT: 1.85,
+  ECHO_MULT: 1.20,
+  SHIELDWALL_GUARD: 0.20,
   COUNTER_COEF: 0.30,
   STATCOEF_OVERRIDE: 1.0, // keep 1.0 to simplify tuning
   NO_GLOBAL_MULT: true,
   IGNORE_DEFPEN: false
 };
 
-window.STATUS_ICON_SIZE = 36;   // try 28, 32, 36
+window.STATUS_ICON_SIZE = 40;   // try 28, 32, 36
 
 
 /* ---------- ability type overrides ---------- */
@@ -485,7 +485,7 @@ const JOBS = {
   Barbarian:{ STR:33,QKN:12, INT:7,TGH:34, kind:'phys', name:'Barbarian' },
   Mage:     { STR:8, QKN:14,INT:35,TGH:27, kind:'mag',  name:'Mage' },
   Paladin:  { STR:24,QKN:12,INT:16,TGH:30, kind:'phys', name:'Paladin' },
-  Archer:   { STR:22,QKN:25,INT:8, TGH:26, kind:'phys', name:'Archer' },
+  Archer:   { STR:22,QKN:25,INT:8, TGH:25, kind:'phys', name:'Archer' },
   Monk:     { STR:24,QKN:28,INT:8, TGH:25, kind:'phys', name:'Monk' },
   Necromancer:{STR:7,QKN:14, INT:34,TGH:27, kind:'mag',  name:'Necromancer' },
   Mystic:   { STR:8, QKN:26,INT:31,TGH:24, kind:'mag',  name:'Mystic' }
@@ -1604,26 +1604,26 @@ if (dmgToApply > 0){
 
   // 1) make it clear WHO is acting (attacker cue)
   if (typeof vfxActCue === 'function') vfxActCue(a, abilityName);
-  else vfxFlashPanel(a, { ms: (VFX?.ACT_FLASH_MS ?? 220) });
+  else vfxFlashPanel(a, { ms: (VFX?.ACT_FLASH_MS ?? 1500) });
 
   // 2) readable “travel → impact” sequence
   vfxProjectile(a, target, { ms: projMs, color: projColor, radius: projRadius });
 
   // (optional) slight delay before impact so travel is readable
-  const impactDelay = Math.max(0, Math.floor(projMs * 0.60));
+  const impactDelay = Math.max(0, Math.floor(projMs * 0.90));
 
   const scene = getScene();
   if (scene && scene.time && scene.time.delayedCall){
     scene.time.delayedCall(impactDelay, () => {
-      vfxShakePanel(target, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 220) });
-      vfxFlashPanel(target, { ms: (VFX?.FLASH_MS ?? 180) });
-      vfxFloatText(target, `-${dmgToApply}`, { ms: (VFX?.FLOAT_MS ?? 900), fontSize: res.crit ? 28 : 20 });
+      vfxShakePanel(target, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 500) });
+      vfxFlashPanel(target, { ms: (VFX?.FLASH_MS ?? 550) });
+      vfxFloatText(target, `-${dmgToApply}`, { ms: (VFX?.FLOAT_MS ?? 1750), fontSize: res.crit ? 28 : 20 });
     });
   } else {
     // fallback (no delay system available)
-    vfxShakePanel(target, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 220) });
-    vfxFlashPanel(target, { ms: (VFX?.FLASH_MS ?? 180) });
-    vfxFloatText(target, `-${dmgToApply}`, { ms: (VFX?.FLOAT_MS ?? 900), fontSize: res.crit ? 28 : 20 });
+    vfxShakePanel(target, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 500) });
+    vfxFlashPanel(target, { ms: (VFX?.FLASH_MS ?? 550) });
+    vfxFloatText(target, `-${dmgToApply}`, { ms: (VFX?.FLOAT_MS ?? 1750), fontSize: res.crit ? 28 : 20 });
   }
 }
 

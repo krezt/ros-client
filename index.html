@@ -762,83 +762,83 @@ case 'Cleric': return [
   speed: 'slow', type: 'mag', target: 'all-allies',
   heal: { min: 25, max: 55 }, healCoef: 0.40, scalesWith: 'SDM',
   use: function(a, arr){
-  let healedTotal = 0;
-  let curedCount  = 0;
+    let healedTotal = 0;
+    let curedCount  = 0;
 
-  const allies = (arr || []).filter(u => u?.alive?.());
-  const scene = getScene();
+    const allies = (arr || []).filter(u => u?.alive?.());
+    const scene = getScene();
 
-  // Timing aligned with your AoE VFX helper
-  const projMs = vfxMs(((VFX?.PROJ_MS ?? 750) * 1.10));
-  const impactDelay = Math.max(0, Math.floor(projMs * 0.90));
-  const step = vfxMs(VFX?.AOE_STAGGER_MS ?? 140);
+    // Timing aligned with your AoE VFX helper (COSMETIC ONLY)
+    const projMs = vfxMs(((VFX?.PROJ_MS ?? 750) * 1.10));
+    const impactDelay = Math.max(0, Math.floor(projMs * 0.90));
+    const step = vfxMs(VFX?.AOE_STAGGER_MS ?? 140);
 
-  // --- VFX ONLY: who cast + caster->each ally motion (GREEN heal language) ---
-  try {
-    vfxCastToTargets?.(a, allies, {
-      label: `Enid's Blessing`,
-      proj: { ms: (VFX?.PROJ_MS ?? 750) * 1.10, color: 0xa7ffb5, radius: 7 }, // soft green heal
-      onImpact: (t) => {
-        // gentle heal impact cue (cosmetic only)
-        vfxFlashColor?.(t, { color: 0xa7ffb5, ms: 360, alpha: 0.20 });
-      },
-      staggerMs: (VFX?.AOE_STAGGER_MS ?? 140)
-    });
-  } catch {}
-
-  // --- ORIGINAL MECHANICS (unchanged) ---
-  for (const ally of (arr || [])){
-    if (!ally?.alive?.()) continue;
-
-    // Heal using THIS ability's heal stats (no duplicated numbers)
-    const H = computeAbilityHeal(a, ally, this);
-
-    const before = ally.hp;
-    ally.hp = clamp(ally.hp + H, 0, ally.maxHP);
-    const healed = ally.hp - before;
-    healedTotal += healed;
-
-    // Cure poison (count only if it actually removed something)
-    const wasPoisoned = hasStatus(ally, 'poison');
-    if (wasPoisoned){
-      removeStatusKey(ally, 'poison');
-      curedCount++;
-      // keep your optional cure pop if you like
-      vfxStatus?.(ally, 'cure', { kind:'buff' });
-    }
-
-    ally._refresh && ally._refresh();
-    checkHPWarnings(ally);
-
-// --- COSMETIC ONLY: guaranteed visible heal feedback (no timing dependency) ---
-if (healed > 0){
-  vfxFlashColor?.(ally, { color: 0xa7ffb5, ms: 450, alpha: 0.18 });
-  vfxFloatText?.(ally, `+${healed}`, { ms: vfxMs(VFX?.FLOAT_MS ?? 1250), fontSize: Math.floor(vfxScale(22)) });
-}
-
-    // --- COSMETIC ONLY: show +amount and "CURED" at impact timing ---
+    // --- VFX ONLY: who cast + caster->each ally motion ---
     try {
-      const i = allies.indexOf(ally); // safe; allies is small (party size)
-      if (scene?.time?.delayedCall && i >= 0){
-        const when = (i * step) + impactDelay;
-        const amt = healed;         // capture values now
-        const cured = wasPoisoned;
-
-        scene.time.delayedCall(when, () => {
-          if (amt > 0){
-            vfxFloatText?.(ally, `+${amt}`, { ms: vfxMs(VFX?.FLOAT_MS ?? 1250), fontSize: Math.floor(vfxScale(22)) });
-          }
-          if (cured){
-            vfxFloatText?.(ally, `CURED`, { ms: vfxMs(900), fontSize: Math.floor(vfxScale(14)) });
-            // Optional: little green flash for cure clarity
-            vfxFlashColor?.(ally, { color: 0x57ff7a, ms: 240, alpha: 0.18 });
-          }
-        });
-      }
+      vfxCastToTargets?.(a, allies, {
+        label: `Enid's Blessing`,
+        proj: { ms: (VFX?.PROJ_MS ?? 750) * 1.10, color: 0xa7ffb5, radius: 7 },
+        onImpact: (t) => {
+          vfxFlashColor?.(t, { color: 0xa7ffb5, ms: 360, alpha: 0.20 });
+        },
+        staggerMs: (VFX?.AOE_STAGGER_MS ?? 140)
+      });
     } catch {}
 
-    // Per-ally line (keeps clarity in combat log)
-    appendLog(`${a.name} channels Enid’s Blessing: ${ally.name} healed for ${healed}${wasPoisoned ? ' and cured of poison' : ''}.`);
+    // --- ORIGINAL MECHANICS (unchanged) ---
+    for (const ally of (arr || [])){
+      if (!ally?.alive?.()) continue;
+
+      const H = computeAbilityHeal(a, ally, this);
+
+      const before = ally.hp;
+      ally.hp = clamp(ally.hp + H, 0, ally.maxHP);
+      const healed = ally.hp - before;
+      healedTotal += healed;
+
+      const wasPoisoned = hasStatus(ally, 'poison');
+      if (wasPoisoned){
+        removeStatusKey(ally, 'poison');
+        curedCount++;
+        vfxStatus?.(ally, 'cure', { kind:'buff' });
+      }
+
+      ally._refresh && ally._refresh();
+      checkHPWarnings(ally);
+
+      // --- COSMETIC ONLY: guaranteed visible heal feedback ---
+      if (healed > 0){
+        vfxFlashColor?.(ally, { color: 0xa7ffb5, ms: 450, alpha: 0.18 });
+        vfxFloatText?.(ally, `+${healed}`, {
+          ms: vfxMs(VFX?.FLOAT_MS ?? 1250),
+          fontSize: Math.floor(vfxScale(22))
+        });
+      }
+
+      // --- COSMETIC ONLY: impact-timed extras (CURED tag) ---
+      try {
+        const i = allies.indexOf(ally);
+        if (scene?.time?.delayedCall && i >= 0){
+          const when = (i * step) + impactDelay;
+          const amt = healed;
+          const cured = wasPoisoned;
+
+          scene.time.delayedCall(when, () => {
+            if (cured){
+              vfxFloatText?.(ally, `CURED`, {
+                ms: vfxMs(900),
+                fontSize: Math.floor(vfxScale(14))
+              });
+              vfxFlashColor?.(ally, { color: 0x57ff7a, ms: 240, alpha: 0.18 });
+            }
+          });
+        }
+      } catch {}
+
+      appendLog(`${a.name} channels Enid’s Blessing: ${ally.name} healed for ${healed}${wasPoisoned ? ' and cured of poison' : ''}.`);
+    }
+
+    // (You can use healedTotal/curedCount later if you want a summary log)
   }
 },
 

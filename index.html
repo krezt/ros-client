@@ -581,6 +581,24 @@ function applyHealFlat(target, amount, { showVFX=true } = {}){
 
   return healed;
 }
+
+function applyHealAmount(caster, target, amount, { abilityName='Heal', showVFX=true } = {}){
+  if (!target || amount <= 0) return { healed: 0 };
+
+  const before = target.hp;
+  target.hp = clamp(target.hp + amount, 0, target.maxHP);
+  const healed = target.hp - before;
+
+  target._refresh && target._refresh();
+  if (typeof checkHPWarnings === 'function') checkHPWarnings(target);
+
+  if (showVFX && healed > 0){
+    vfxHealImpact?.(caster, target, healed, abilityName);
+  }
+
+  return { healed };
+}
+
 /* ---------- abilities (now with min/max healing where relevant) ---------- */
 function abilitiesFor(u){
   switch(u.job){
@@ -591,44 +609,53 @@ case 'Warrior': return [
    base:{min:45,max:75}, statCoef:0.35, isBasic:true,
    use:function(a,t){ return hit(a,t,{ability:this}); } },
 
-{label:'Warhorn', desc:'Heal and briefly bolster yourself with strength and ability quickness.',
- speed:'slow', type:'mag', target:'self',
- use:(a)=>{
-   // ATK↑ — 1 stack for 3 rounds
-   const atkDur = 3;
-   pushStatus(a, { key:'atk_up', dur: atkDur });
+{
+  label:'Warhorn',
+  desc:'Heal and briefly bolster yourself with strength and ability quickness.',
+  speed:'slow', type:'mag', target:'self',
 
-   // Premonition — acts at fast speed next round
-   // Use dur:2 so it survives the current end-of-round tick.
-   const preDur = 2;
-   pushStatus(a, { key:'premonition', dur: preDur });
+  use:function(a){
+    // ATK↑ — 1 stack for 3 rounds
+    const atkDur = 3;
+    pushStatus(a, { key:'atk_up', dur: atkDur });
 
-   // Small personal heal that scales a bit with ATK
-   const healSpec = { heal:{ min:15, max:25 }, healCoef:0.18, scalesWith:'ATK', type:'mag' };
-   const H = computeAbilityHeal(a, a, healSpec);
+    // Premonition — acts at fast speed next round
+    // Use dur:2 so it survives the current end-of-round tick.
+    const preDur = 2;
+    pushStatus(a, { key:'premonition', dur: preDur });
 
-   // ✅ Use your new helper here (this is the right spot)
-   const out = applyHeal(a, a, H, { abilityName: 'Warhorn' });
+    // Small personal heal that scales a bit with ATK
+    const healSpec = { heal:{ min:15, max:25 }, healCoef:0.18, scalesWith:'ATK', type:'mag' };
 
-   appendLog(`${a.name} sounds the Warhorn and surges with strength and quickness. ${a.name} heals ${out.healed}.`);
- }},
+    // IMPORTANT: target is self (a)
+    const H = computeAbilityHeal(a, a, healSpec);
 
+    // Apply the heal and show +HP (cosmetic-only)
+    const out = applyHealAmount(a, a, H, { abilityName: 'Warhorn' });
+
+    appendLog(`${a.name} sounds the Warhorn and surges with strength and quickness. ${a.name} heals ${out.healed}.`);
+  }
+},
 
   {label:'Power Strike', desc:'Slow, potentially heavy blow.', speed:'slow', type:'phys', target:'enemy',
    base:{min:40,max:120}, statCoef:0.60,
    use:function(a,t){ return hit(a,t,{ability:this}); } },
 
   {label:'Insult', desc:'Taunt an enemy into attacking you.', speed:'normal', type:'phys', target:'enemy',
-   use:(a,t)=>{
-     if(!t.alive()) return appendLog(`${a.name}'s Taunt has no effect on the dead.`);
-     if(rand()<0.60){
-       const dur=ccDurBySDM(a);
-       pushStatus(t,{ key:'taunt', dur, data:{ taunter:a }});
-       appendLogHTML(`<span style="color:#b084ff">${a.name} taunts ${t.name}! ${t.name} must attack ${a.name} for ${dur} round(s).</span>`);
-     } else {
-       appendLog(`${a.name}'s insults fail to have any effect whatsoever.`);
-     }
-   }},
+ use:(a,t)=>{
+   if(!t.alive()) return appendLog(`${a.name}'s Taunt has no effect on the dead.`);
+   if(rand()<0.60){
+     const dur=ccDurBySDM(a);
+     pushStatus(t,{ key:'taunt', dur, data:{ taunter:a }});
+
+     // --- COSMETIC ONLY: hard CC VFX (who cast + origin + TAUNT tag) ---
+     vfxHardCC?.(a, t, 'taunt');
+
+     appendLogHTML(`<span style="color:#b084ff">${a.name} taunts ${t.name}! ${t.name} must attack ${a.name} for ${dur} round(s).</span>`);
+   } else {
+     appendLog(`${a.name}'s insults fail to have any effect whatsoever.`);
+   }
+ }},
 
   {label:'Shieldwall', desc:'Allies gain mitigation; intercept first hit.', speed:'fast', type:'phys', target:'all-allies',
    use:(a,arr)=>{
@@ -658,10 +685,16 @@ case 'Warrior': return [
          const dur=buffDurBySDM(a); for(const t of arr){ if(!t.alive()) continue; pushStatus(t,{key:'def_down', dur}); }
          appendLog(`All enemies’ defense is reduced (${dur}).`); } },
 
-      {label:'Smash', desc:'Crushing blow with chance to stun.', speed:'slow', type:'phys', target:'enemy',
-       base:{min:50,max:90}, statCoef:0.55,
-       use:function(a,t){ const r=hit(a,t,{ability:this}); if(t.alive() && rand()<0.25){ const dur=ccDurBySDM(a);
-         applyStatusWithLog(t,'stun',dur,'#b084ff',`${t.name} is stunned for {dur} rounds!`);} return r; } },
+     {label:'Smash', desc:'Crushing blow with chance to stun.', speed:'slow', type:'phys', target:'enemy',
+ base:{min:50,max:90}, statCoef:0.55,
+ use:function(a,t){
+   const r=hit(a,t,{ability:this});
+   if(t.alive() && rand()<0.25){
+     const dur=ccDurBySDM(a);
+     applyStatusWithLog(t,'stun',dur,'#b084ff',`${t.name} is stunned for {dur} rounds!`, a);
+   }
+   return r;
+ }},
 
       {label:'Rampage', desc:'Swing that grants rampage on killshot.', speed:'normal', type:'phys', target:'enemy',
        base:{min:50,max:110}, statCoef:0.45,
@@ -710,19 +743,52 @@ case 'Warrior': return [
 
      {label:'Smoke Bomb', desc:'Blind all enemies this round and heal for 15% of max HP.', speed:'fast', type:'mag', target:'all-enemies',
  use:(a,arr)=>{
-   // blind enemies
+
+   const aliveTargets = (arr || []).filter(t => t?.alive?.());
+   const scene = getScene();
+
+   // Timing that matches vfxCastToTargets so we can offset the tag slightly
+   const projMs = vfxMs(((VFX?.PROJ_MS ?? 750) * 0.85));
+   const impactDelay = Math.max(0, Math.floor(projMs * 0.90));
+   const step = vfxMs(VFX?.AOE_STAGGER_MS ?? 140);
+   const extraTagDelay = vfxMs(80); // small readability offset (cosmetic only)
+
+   // --- VFX ONLY: show caster -> each target with BLIND language ---
+   try {
+     vfxCastToTargets?.(a, aliveTargets, {
+       label: 'Smoke Bomb',
+       proj: { ms: (VFX?.PROJ_MS ?? 750) * 0.85, color: 0xffb36b, radius: 7 },
+       onImpact: (t) => {
+         // Delay slightly so impact flash/arrival happens, THEN the status label pops
+         try {
+           if (scene?.time?.delayedCall){
+             scene.time.delayedCall(extraTagDelay, () => {
+               vfxHardCC?.(a, t, 'blind', { ms: 800, showOrigin: false });
+             });
+           } else {
+             vfxHardCC?.(a, t, 'blind', { ms: 800, showOrigin: false });
+           }
+         } catch {}
+       },
+       staggerMs: (VFX?.AOE_STAGGER_MS ?? 140)
+     });
+   } catch {}
+
+   // blind enemies (MECHANICS UNCHANGED)
    let n = 0;
-   for (const t of arr){
-     if (!t.alive()) continue;
+   for (const t of (arr || [])){
+     if (!t?.alive?.()) continue;
      pushStatus(t,{key:'blind', dur:1});
      n++;
    }
 
+   // Self-heal: exactly 15% max HP (MECHANICS UNCHANGED)
    const healAmt = Math.max(1, Math.floor(a.maxHP * 0.15));
-const healed = applyHealFlat(a, healAmt);
-appendLogHTML(`${a.name} throws <b>Smoke Bomb</b>!... recovers ${healed} HP.`);
+   const out = applyHealAmount(a, a, healAmt, { abilityName: 'Smoke Bomb' });
 
- }}
+   appendLogHTML(`${a.name} throws <b>Smoke Bomb</b>! ${n} foe(s) are blinded. ${a.name} recovers ${out.healed} HP.`);
+ }},
+
 
     ];
 
@@ -738,11 +804,8 @@ case 'Cleric': return [
       const dur = buffDurBySDM(a);
       pushStatus(t, { key: 'def_up', dur });
 
-      // 2) Heal (use the ability’s own heal stats so there's only ONE source of truth)
       const H = computeAbilityHeal(a, t, this);
-
-      // ✅ helper does clamp + refresh + warnings + heal VFX (if you built it that way)
-      const out = applyHeal(a, t, H, { abilityName: this.label, kind: 'mag' });
+const out = applyHealAmount(a, t, H, { abilityName: 'Defensive Aura' });
 
       appendLog(`${a.name} blesses ${t.name} with ${this.label}: DEF↑ (${dur}), healed for ${out.healed}.`);
     }
@@ -926,10 +989,16 @@ case 'Cleric': return [
        base:{min:10,max:25}, statCoef:0.40, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
-      {label:'Meteor', desc:'Fast meteor strike with chance to stun.', speed:'fast', type:'mag', target:'enemy',
-       base:{min:20,max:50}, statCoef:0.45,
-       use:function(a,t){ const r=hit(a,t,{ability:this}); if(t.alive() && rand()<0.25){ const dur=ccDurBySDM(a);
-         applyStatusWithLog(t,'stun',dur,'#b084ff',`${t.name} is hit with a meteor and dazed for {dur} rounds!`);} return r; } },
+     {label:'Meteor', desc:'Fast meteor strike with chance to stun.', speed:'fast', type:'mag', target:'enemy',
+ base:{min:20,max:50}, statCoef:0.45,
+ use:function(a,t){
+   const r=hit(a,t,{ability:this});
+   if(t.alive() && rand()<0.25){
+     const dur=ccDurBySDM(a);
+     applyStatusWithLog(t,'stun',dur,'#b084ff',`${t.name} is hit with a meteor and dazed for {dur} rounds!`, a);
+   }
+   return r;
+ }},
 
       {label:'Fireball', desc:'Large fireball that scorches all foes.', speed:'slow', type:'mag', target:'all-enemies',
        base:{min:40,max:80}, statCoef:0.50, defPen:0.20,
@@ -946,9 +1015,15 @@ case 'Cleric': return [
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Shield Bash', desc:'Quick bash with a small chance to stun.', speed:'fast', type:'phys', target:'enemy',
-       base:{min:20,max:40}, statCoef:0.35,
-       use:function(a,t){ const r=hit(a,t,{ability:this}); if(t.alive() && rand()<0.25){ const dur=ccDurBySDM(a);
-         applyStatusWithLog(t,'stun',dur,'#b084ff',`${t.name} is smacked with the Crusader Shield and stunned for {dur} rounds!`);} return r; } },
+ base:{min:20,max:40}, statCoef:0.35,
+ use:function(a,t){
+   const r=hit(a,t,{ability:this});
+   if(t.alive() && rand()<0.25){
+     const dur=ccDurBySDM(a);
+     applyStatusWithLog(t,'stun',dur,'#b084ff',`${t.name} is smacked with the Crusader Shield and stunned for {dur} rounds!`, a);
+   }
+   return r;
+ }},
 
       {
   label:'Cleanse',
@@ -1087,9 +1162,15 @@ case 'Cleric': return [
          appendLog(count ? `A Chi Wave rips accross the battlefield. Negative effects washed away from ${count} allies.` : `No negative effects to cleanse.`); } },
 
       {label:'Palm Hit', desc:'Body blow that may stagger foes.', speed:'normal', type:'phys', target:'enemy',
-       base:{min:25,max:35}, statCoef:0.30,
-       use:function(a,t){ const r=hit(a,t,{ability:this}); if(t.alive() && rand()<0.25){ const dur=ccDurBySDM(a);
-         applyStatusWithLog(t,'stun',dur,'#b084ff',`${t.name} is staggered for {dur} rounds!`);} return r; } },
+ base:{min:25,max:35}, statCoef:0.30,
+ use:function(a,t){
+   const r=hit(a,t,{ability:this});
+   if(t.alive() && rand()<0.25){
+     const dur=ccDurBySDM(a);
+     applyStatusWithLog(t,'stun',dur,'#b084ff',`${t.name} is staggered for {dur} rounds!`, a);
+   }
+   return r;
+ }},
 
       {label:'Counterstance', desc:'Guard and counter basic attacks.', speed:'fast', type:'phys', target:'self',
        use:(a)=>{ pushStatus(a,{key:'guard', dur:1, data:{ pct:0.40 }}); pushStatus(a,{key:'counter', dur:1}); appendLog(`${a.name} adopts a counter stance.`); }}
@@ -1210,62 +1291,74 @@ case 'Cleric': return [
 },
 
 
-      {label:'Plague', desc:'Afflict all foes with massive poison.', speed:'slow', type:'mag', target:'all-enemies',
-       base:{min:10,max:60}, statCoef:0.30,
-       use:function(a,arr){
+{
+  label:'Plague',
+  desc:'Afflict all foes with massive poison.',
+  speed:'slow', type:'mag', target:'all-enemies',
+  base:{min:10,max:60}, statCoef:0.30,
 
-  // VFX target list + index map (COSMETIC ONLY)
-  const aliveTargets = arr.filter(t => t && t.alive());
-  const idxMap = new Map();
-  aliveTargets.forEach((t,i)=>idxMap.set(t,i));
+  use:function(a, arr){
 
-  // Match the same timing as vfxCastToTargets so impact lines up
-  const scene = getScene();
-  const projMs = vfxMs(((VFX?.PROJ_MS ?? 750) * 1.15));
-  const impactDelay = Math.max(0, Math.floor(projMs * 0.90));
-  const step = vfxMs(VFX?.AOE_STAGGER_MS ?? 140);
+    // VFX target list + index map (COSMETIC ONLY)
+    const aliveTargets = (arr || []).filter(t => t && t.alive && t.alive());
+    const idxMap = new Map();
+    aliveTargets.forEach((t,i)=>idxMap.set(t,i));
 
-  // --- VFX ONLY: caster -> each target travel + green impact ---
-  try {
-    vfxCastToTargets?.(a, aliveTargets, {
-      label: 'Plague',
-      proj: { ms: (VFX?.PROJ_MS ?? 750) * 1.15, color: 0x57ff7a, radius: 7 },
-      onImpact: (t) => {
-        vfxFlashColor?.(t, { color: 0x57ff7a, ms: 350, alpha: 0.25 });
-        // NOTE: we do NOT show text here because we want the amount (+X) from the real res.dmg
-      },
-      staggerMs: (VFX?.AOE_STAGGER_MS ?? 140)
-    });
-  } catch {}
+    // Match timing to vfxCastToTargets so impact lines up
+    const scene = getScene();
+    const projMs = vfxMs(((VFX?.PROJ_MS ?? 750) * 1.15));
+    const impactDelay = Math.max(0, Math.floor(projMs * 0.90));
+    const step = vfxMs(VFX?.AOE_STAGGER_MS ?? 140);
 
-  // --- ORIGINAL MECHANICS (unchanged) ---
-  for (const t of arr){
-    if (!t.alive()) continue;
+    // --- VFX ONLY: caster -> each target travel + green impact ---
+    try {
+      vfxCastToTargets?.(a, aliveTargets, {
+        label: 'Plague',
+        proj: { ms: (VFX?.PROJ_MS ?? 750) * 1.15, color: 0x57ff7a, radius: 7 }, // GREEN poison
+        onImpact: (t) => {
+          vfxFlashColor?.(t, { color: 0x57ff7a, ms: 350, alpha: 0.25 });
+          // No text here — we want res.dmg from the real loop below
+        },
+        staggerMs: (VFX?.AOE_STAGGER_MS ?? 140)
+      });
+    } catch {}
 
-    const res = computeAbilityDamage(a, t, this);
+    // --- ORIGINAL MECHANICS (unchanged) ---
+    for (const t of (arr || [])){
+      if (!t?.alive?.()) continue;
 
-    if (res.hit && !res.dodged && res.dmg > 0){
-      addPoison(t, res.dmg);
-      logGreen(`${t.name} is afflicted by a horrible plague (+${res.dmg}).`);
+      const res = computeAbilityDamage(a, t, this);
 
-      // COSMETIC ONLY: show PLAGUE + +poison when the projectile reaches them
-      try {
-        const i = idxMap.get(t);
-        if (scene?.time?.delayedCall && i != null){
-          const when = (i * step) + impactDelay;
-          const amt = res.dmg; // capture now
-          scene.time.delayedCall(when, () => {
-            vfxFloatText?.(t, `PLAGUE`, { ms: vfxMs(850), fontSize: Math.floor(vfxScale(16)) });
-            vfxFloatText?.(t, `+${amt} POISON`, { ms: vfxMs(1100), fontSize: Math.floor(vfxScale(16)) });
-          });
-        }
-      } catch {}
+      if (res.hit && !res.dodged && res.dmg > 0){
+        addPoison(t, res.dmg);
+        logGreen(`${t.name} is afflicted by a horrible plague (+${res.dmg}).`);
 
-    } else {
-      appendLog(`${a.name}'s Plague misses ${t.name}.`);
+        // COSMETIC ONLY: show PLAGUE + -poison when the projectile reaches them
+        try {
+          const i = idxMap.get(t);
+          if (scene?.time?.delayedCall && i != null){
+            const when = (i * step) + impactDelay;
+            const amt = res.dmg; // capture now
+            scene.time.delayedCall(when, () => {
+              vfxFloatText?.(t, `PLAGUE`, {
+                ms: vfxMs(850),
+                fontSize: Math.floor(vfxScale(16)),
+                color: (VFX_COL?.poison || '#57ff7a')
+              });
+              vfxFloatText?.(t, `-${amt} POISON`, {
+                ms: vfxMs(1100),
+                fontSize: Math.floor(vfxScale(16)),
+                color: (VFX_COL?.poison || '#57ff7a')
+              });
+            });
+          }
+        } catch {}
+
+      } else {
+        appendLog(`${a.name}'s Plague misses ${t.name}.`);
+      }
     }
   }
-}
 },
 
       {label:'Death Touch', desc:'Crush a third of the foe’s current life.', speed:'slow', type:'mag', target:'enemy',
@@ -1364,21 +1457,27 @@ case 'Cleric': return [
     case 'Mystic': return [
       {label:'Stun', desc:'Quickly stun your foe. 40% success.', speed:'fast', type:'mag', target:'enemy',
        use:(a,t)=>{
-         if(rand()<0.40){ const dur=ccDurBySDM(a);
-           applyStatusWithLog(t,'stun',dur,'#b084ff',`${a.name} stuns ${t.name} for {dur} rounds!`);
-         } else { appendLog(`${a.name}'s Stun fails to take hold.`); }
-       } },
+     if(rand()<0.40){
+     const dur=ccDurBySDM(a);
+     applyStatusWithLog(t,'stun',dur,'#b084ff',`${a.name} stuns ${t.name} for {dur} rounds!`, a);
+      } else {
+      appendLog(`${a.name}'s Stun fails to take hold.`);
+     }
+ }},
 
       {label:'Attack', desc:'Throwing dagger attack which can find weak spots.', speed:'normal', type:'mag', target:'enemy',
        base:{min:20,max:25}, scalesWith:'SDM', statCoef:0.40, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Berserk', desc:'Target loses control; will attack anyone. 45% success.', speed:'normal', type:'mag', target:'enemy',
-       use:(a,t)=>{
-         if(rand()<0.45){ const dur=ccDurBySDM(a);
-           applyStatusWithLog(t,'berserk',dur,'#b084ff',`${a.name} drives ${t.name} absolutely berserk for {dur} rounds!`);
-         } else { appendLog(`${a.name}'s Berserk fails to take hold.`); }
-       } },
+ use:(a,t)=>{
+   if(rand()<0.45){
+     const dur=ccDurBySDM(a);
+     applyStatusWithLog(t,'berserk',dur,'#b084ff',`${a.name} drives ${t.name} absolutely berserk for {dur} rounds!`, a);
+   } else {
+     appendLog(`${a.name}'s Berserk fails to take hold.`);
+   }
+ }},
 
       {label:'Mental Breakdown', desc:'Crushing psychic blow.', speed:'slow', type:'mag', target:'enemy',
        base:{min:60,max:90}, scalesWith:'SDM', statCoef:0.55,
@@ -1720,15 +1819,17 @@ if (typeof addPoison === 'function' && !addPoison._vfxWrapped){
     const out = _addPoison(target, amt); // mechanics unchanged
 
     try {
-      if (target && amt > 0){
-        vfxFlashColor?.(target, { color: 0x57ff7a, ms: 320, alpha: 0.24 });
-        vfxFloatText?.(target, `POISON +${Math.floor(amt)}`, {
-          ms: vfxMs(900),
-          fontSize: Math.floor(vfxScale(16)),
-          color: (VFX_COL?.poison || '#57ff7a')
-        });
-      }
-    } catch {}
+  if (target && amt > 0){
+    // Green “poison applied” language (no number here to avoid double pops)
+    vfxFlashColor?.(target, { color: 0x57ff7a, ms: 320, alpha: 0.24 });
+    vfxFloatText?.(target, `POISONED`, {
+      ms: vfxMs(650),
+      fontSize: Math.floor(vfxScale(14)),
+      color: (VFX_COL?.poison || '#57ff7a')
+    });
+  }
+} catch {}
+
 
     return out;
   };
@@ -1754,8 +1855,16 @@ function ccDurBySDM(caster){
   const roll=min+randInt(0,Math.max(0,max-min)); const bonus=Math.floor(Math.max(0,caster?.SDM||0)/step);
   return Math.min(cap, roll+bonus);
 }
-function applyStatusWithLog(target, statusKey, dur, colorHex, text){
+function applyStatusWithLog(target, statusKey, dur, colorHex, text, caster=null){
   pushStatus(target,{key:statusKey,dur});
+
+  // --- COSMETIC ONLY: hard CC VFX when relevant ---
+  try {
+    if (statusKey === 'stun' || statusKey === 'blind' || statusKey === 'berserk' || statusKey === 'taunt'){
+      vfxHardCC?.(caster, target, statusKey);
+    }
+  } catch {}
+
   const msg = text && text.includes('{dur}') ? text.replace('{dur}', dur) : `${text || statusKey} (${dur} rounds).`;
   appendLogHTML(`<span style="color:${colorHex}">${msg}</span>`);
   return dur;
@@ -2296,9 +2405,51 @@ vfxPoisonTick(u, dealt);
   }
 }
 
+function vfxHardCC(caster, target, key, { ms=900, showOrigin=true } = {}){
+  if (!target) return;
+
+  const map = {
+    stun:    { text: VFX_TEXT?.stun    || 'STUNNED',  color: 0xff6bd6 },
+    blind:   { text: VFX_TEXT?.blind   || 'BLIND',    color: 0xffb36b },
+    berserk: { text: VFX_TEXT?.berserk || 'BERSERK',  color: 0xff6b6b },
+    taunt:   { text: VFX_TEXT?.taunt   || 'TAUNT',    color: 0xa7c4ff }
+  };
+  const cfg = map[key] || { text: String(key||'STATUS').toUpperCase(), color: 0xff6bd6 };
+
+  // Who cast it (if known)
+  if (caster) vfxActCue?.(caster, cfg.text, { ms: VFX?.ACT_FLASH_MS ?? 500 });
+
+  // Origin clarity
+  try {
+    if (showOrigin && caster && typeof vfxProjectile === 'function'){
+      vfxProjectile(caster, target, {
+        ms: (VFX?.PROJ_MS ?? 750) * 0.95,
+        color: cfg.color,
+        radius: 6
+      });
+    }
+  } catch {}
+
+  // Impact language on target
+  try {
+    vfxFlashColor?.(target, { color: cfg.color, ms: vfxMs(320), alpha: 0.28 });
+    vfxShakePanel?.(target, { px: Math.floor((VFX?.SHAKE_PX ?? 7) * 1.0), ms: vfxMs((VFX?.SHAKE_MS ?? 250) * 1.05) });
+    vfxFloatText?.(target, cfg.text, {
+      ms: vfxMs(ms),
+      fontSize: Math.floor(vfxScale(16)),
+      color: (VFX_COL?.cc || '#ff6bd6')
+    });
+  } catch {}
+}
+
+
 function vfxPoisonTick(u, amount){
   vfxFlashColor(u, { color: 0x57ff7a, ms: vfxMs(300), alpha: 0.40 });
-  vfxFloatText(u, `-${amount} POISON`, { ms: vfxMs(1250), fontSize: Math.floor(vfxScale(18)) });
+  vfxFloatText(u, `-${amount} POISON`, {
+    ms: vfxMs(1250),
+    fontSize: Math.floor(vfxScale(18)),
+    color: (VFX_COL?.poison || '#57ff7a')
+  });
 }
 
 function vfxActCue(u, label, { ms = VFX.ACT_FLASH_MS } = {}){

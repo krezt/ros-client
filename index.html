@@ -1017,17 +1017,29 @@ function getScene(){
 }
 
 function panelCenterWorld(u){
-  // Uses the unit panel container position (which is in the scene)
-  // and returns an approximate center point for projectiles/text.
   if (!u?._ui?.panel) return null;
-  const p = u._ui.panel;
+  const panel = u._ui.panel;
   const scene = u._ui.scene || getScene();
   if (!scene) return null;
 
-  // Container origin is top-left of panel
-  const x = p.x + (scene.PANEL_W || 380) * 0.5;
-  const y = p.y + (scene.PANEL_H || 120) * 0.35; // slightly above center feels better
-  return { x, y };
+  const w = (scene.PANEL_W || 380);
+  const h = (scene.PANEL_H || 120);
+
+  // Point you want inside the panel (local-to-panel)
+  const localX = w * 0.5;
+  const localY = h * 0.35;
+
+  // Convert panel-local point -> world point
+  // (works even when panel is inside other containers)
+  if (panel.getWorldTransformMatrix) {
+    const m = panel.getWorldTransformMatrix();
+    const out = { x: 0, y: 0 };
+    m.transformPoint(localX, localY, out);
+    return out;
+  }
+
+  // Fallback (less accurate if nested containers)
+  return { x: panel.x + localX, y: panel.y + localY };
 }
 
 function vfxShakePanel(u, { px=6, ms=160 } = {}){
@@ -1063,15 +1075,23 @@ function vfxFloatText(u, text, { ms=650, fontSize=20 } = {}){
     color: '#ffffff',
     stroke: '#000000',
     strokeThickness: 4
-  }).setOrigin(0.5, 0.5).setDepth(9999);
+  })
+  .setOrigin(0.5, 0.5)
+  .setDepth(999999)          // really high, above your panels
+  .setScrollFactor(0)        // if you ever add camera movement, text stays stable
+  .setAlpha(1);
 
+  // kill any tweens on it before destroying (prevents tween errors if scene restarts)
   scene.tweens.add({
     targets: t,
     y: pos.y - 26,
     alpha: 0,
     duration: ms,
     ease: 'Quad.easeOut',
-    onComplete: () => t.destroy()
+    onComplete: () => {
+      if (scene && scene.tweens) scene.tweens.killTweensOf(t);
+      t.destroy();
+    }
   });
 }
 
@@ -1081,7 +1101,10 @@ function vfxProjectile(a, t, { ms=260, color=0xffffff, radius=5 } = {}){
   const to   = panelCenterWorld(t);
   if (!scene || !from || !to) return;
 
-  const g = scene.add.graphics().setDepth(9998);
+  const g = scene.add.graphics()
+    .setDepth(999998)     // just under float text
+    .setScrollFactor(0);  // same camera safety
+
   g.fillStyle(color, 1);
   g.fillCircle(0, 0, radius);
   g.x = from.x; g.y = from.y;

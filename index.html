@@ -666,10 +666,7 @@ case 'Warrior': return [
    if(!t.alive()) return appendLog(`${a.name}'s Taunt has no effect on the dead.`);
    if(rand()<0.60){
      const dur=ccDurBySDM(a);
-     pushStatus(t,{ key:'taunt', dur, data:{ taunter:a }});
-
-     // --- COSMETIC ONLY: hard CC VFX (who cast + origin + TAUNT tag) ---
-     vfxHardCC?.(a, t, 'taunt');
+     applyHardCC(a, t, 'taunt', dur, { data:{ taunter:a }});
 
      appendLogHTML(`<span style="color:#b084ff">${a.name} taunts ${t.name}! ${t.name} must attack ${a.name} for ${dur} round(s).</span>`);
    } else {
@@ -794,12 +791,9 @@ case 'Warrior': return [
      });
    } catch {}
 
-   // blind enemies (MECHANICS UNCHANGED)
-   let n = 0;
-   for (const t of (arr || [])){
-     if (!t?.alive?.()) continue;
-     pushStatus(t,{key:'blind', dur:1});
-     n++;
+// Blind enemies (MECHANICS unchanged: dur=1)
+const n = applyHardCC_AOE(a, arr, 'blind', 1);
+
    }
 
    // Self-heal: exactly 15% max HP (MECHANICS UNCHANGED)
@@ -1900,18 +1894,94 @@ function ccDurBySDM(caster){
   const roll=min+randInt(0,Math.max(0,max-min)); const bonus=Math.floor(Math.max(0,caster?.SDM||0)/step);
   return Math.min(cap, roll+bonus);
 }
+
+function applyHardCC(caster, target, key, dur, { data=null, showVFX=true } = {}){
+  if (!target) return false;
+
+  // MECHANICS (unchanged): apply status
+  if (data) pushStatus(target, { key, dur, data });
+  else      pushStatus(target, { key, dur });
+
+  // COSMETIC ONLY: show unified hard-CC language
+  if (showVFX){
+    try {
+      // Stagger the CC tag slightly so it doesn't collide with other pops
+      const scene = getScene?.();
+      const delay = (typeof vfxMs === 'function') ? vfxMs(60) : 60;
+
+      const doVFX = () => {
+        // One consistent CC impact (purple)
+        vfxHardCC?.(caster, target, key, { ms: 900, showOrigin: true });
+
+        // Optional extra: a short purple overlay to unify hard CC feel
+        if (typeof vfxFlashColor === 'function'){
+          vfxFlashColor(target, { color: (VFX?.CC_HEX ?? 0xb084ff), ms: (typeof vfxMs==='function'? vfxMs(260):260), alpha: 0.20 });
+        }
+      };
+
+      if (scene?.time?.delayedCall) scene.time.delayedCall(delay, doVFX);
+      else doVFX();
+    } catch {}
+  }
+
+  return true;
+}
+
+function applyHardCC_AOE(caster, targets, key, dur, { showVFX=true } = {}){
+  const list = (targets || []).filter(t => t?.alive?.());
+  if (!list.length) return 0;
+
+  // MECHANICS (unchanged): apply to everyone immediately
+  for (const t of list){
+    pushStatus(t, { key, dur });
+  }
+
+  // COSMETIC ONLY: origin + staggered impacts for readability
+  if (showVFX){
+    try {
+      vfxCastToTargets?.(caster, list, {
+        label: (VFX_TEXT?.[key] || String(key).toUpperCase()),
+        proj: { ms: (VFX?.PROJ_MS ?? 750) * 0.85, color: (VFX?.CC_HEX ?? 0xb084ff), radius: 7 },
+        onImpact: (t) => {
+          // showOrigin false because projectile already showed origin
+          vfxHardCC?.(caster, t, key, { ms: 900, showOrigin: false });
+        },
+        staggerMs: (VFX?.AOE_STAGGER_MS ?? 150)
+      });
+    } catch {}
+  }
+
+  return list.length;
+}
+
 function applyStatusWithLog(target, statusKey, dur, colorHex, text, caster=null){
   pushStatus(target,{key:statusKey,dur});
 
-  // --- COSMETIC ONLY: hard CC VFX when relevant ---
+  const msg = (text && text.includes('{dur}'))
+    ? text.replace('{dur}', dur)
+    : `${text || statusKey} (${dur} rounds).`;
+
+  const logCol = (statusKey === 'stun' || statusKey === 'blind' || statusKey === 'taunt' || statusKey === 'berserk')
+  ? (VFX_COL?.cc || '#b084ff')
+  : colorHex;
+
+appendLogHTML(`<span style="color:${logCol}">${msg}</span>`);
+
+  // --- COSMETIC ONLY: unified hard CC language (purple) ---
   try {
-    if (statusKey === 'stun' || statusKey === 'blind' || statusKey === 'berserk' || statusKey === 'taunt'){
-      vfxHardCC?.(caster, target, statusKey);
+    // Only treat these as "hard CC" for the shared purple language:
+    if (statusKey === 'stun' || statusKey === 'blind' || statusKey === 'taunt' || statusKey === 'berserk'){
+     const scene = getScene?.();
+const d = vfxMs?.(120) ?? 120;
+if (scene?.time?.delayedCall) scene.time.delayedCall(d, () => vfxHardCC?.(caster, target, statusKey, { ms: 900, showOrigin: true }));
+else vfxHardCC?.(caster, target, statusKey, { ms: 900, showOrigin: true });
+
+    } else {
+      // non-hard statuses still get your normal status pop
+      vfxStatus?.(target, statusKey, { dur, kind:'debuff' });
     }
   } catch {}
 
-  const msg = text && text.includes('{dur}') ? text.replace('{dur}', dur) : `${text || statusKey} (${dur} rounds).`;
-  appendLogHTML(`<span style="color:${colorHex}">${msg}</span>`);
   return dur;
 }
 
@@ -2366,11 +2436,11 @@ window.syncDeathState = syncDeathState;
 // VFX VOCAB (colors/labels)
 // =========================
 const VFX_COL = {
-  dmg:   '#ffffff',
+  dmg:   '#ff6b6b',
   crit:  '#ffd37a',
   heal:  '#7CFF9A',
   dodge: '#7ad7ff',
-  cc:    '#ff6bd6',
+  cc:    '#b084ff',
   poison:'#57ff7a',
   buff:  '#a7c4ff',
   debuff:'#ffb36b',
@@ -2452,41 +2522,51 @@ vfxPoisonTick(u, dealt);
 
 function vfxHardCC(caster, target, key, { ms=900, showOrigin=true } = {}){
   if (!target) return;
+ 
+ // --- COSMETIC ONLY: de-dupe hard CC on same unit/key in the same moment ---
+  const scene = getScene?.();
+  const now = (scene?.time && typeof scene.time.now === 'number') ? scene.time.now : Date.now();
+  const k = `cc:${key}`;
+  const last = target._vfxCCLast || { t: -999999, k: '' };
+  const windowMs = vfxMs?.(180) ?? 180;
+  if (last.k === k && (now - last.t) < windowMs) return;
+  target._vfxCCLast = { t: now, k };
 
-  const map = {
-    stun:    { text: VFX_TEXT?.stun    || 'STUNNED',  color: 0xff6bd6 },
-    blind:   { text: VFX_TEXT?.blind   || 'BLIND',    color: 0xffb36b },
-    berserk: { text: VFX_TEXT?.berserk || 'BERSERK',  color: 0xff6b6b },
-    taunt:   { text: VFX_TEXT?.taunt   || 'TAUNT',    color: 0xa7c4ff }
-  };
-  const cfg = map[key] || { text: String(key||'STATUS').toUpperCase(), color: 0xff6bd6 };
+  const label =
+    (key === 'stun')    ? (VFX_TEXT?.stun    || 'STUNNED') :
+    (key === 'blind')   ? (VFX_TEXT?.blind   || 'BLIND') :
+    (key === 'berserk') ? (VFX_TEXT?.berserk || 'BERSERK') :
+    (key === 'taunt')   ? (VFX_TEXT?.taunt   || 'TAUNT') :
+                          (VFX_TEXT?.[key]   || String(key||'STATUS').toUpperCase());
 
-  // Who cast it (if known)
-  if (caster) vfxActCue?.(caster, cfg.text, { ms: VFX?.ACT_FLASH_MS ?? 500 });
+  const hex = (VFX?.CC_HEX ?? 0xb084ff);          // purple
+  const textCol = (VFX_COL?.cc ?? '#b084ff');     // purple text
 
-  // Origin clarity
+  // show WHO cast it
+  if (caster) vfxActCue?.(caster, label);
+
+  // caster -> target motion (optional)
   try {
     if (showOrigin && caster && typeof vfxProjectile === 'function'){
       vfxProjectile(caster, target, {
-        ms: (VFX?.PROJ_MS ?? 750) * 0.95,
-        color: cfg.color,
-        radius: 6
+        ms: vfxMs?.((VFX?.PROJ_MS ?? 750) * 0.90) ?? ((VFX?.PROJ_MS ?? 750) * 0.90),
+        color: hex,
+        radius: Math.floor((typeof vfxScale === 'function' ? vfxScale(6) : 6))
       });
     }
   } catch {}
 
-  // Impact language on target
+  // impact language on target
   try {
-    vfxFlashColor?.(target, { color: cfg.color, ms: vfxMs(320), alpha: 0.28 });
-    vfxShakePanel?.(target, { px: Math.floor((VFX?.SHAKE_PX ?? 7) * 1.0), ms: vfxMs((VFX?.SHAKE_MS ?? 250) * 1.05) });
-    vfxFloatText?.(target, cfg.text, {
-      ms: vfxMs(ms),
-      fontSize: Math.floor(vfxScale(16)),
-      color: (VFX_COL?.cc || '#ff6bd6')
+    vfxFlashColor?.(target, { color: hex, ms: vfxMs?.(320) ?? 320, alpha: 0.26 });
+    vfxShakePanel?.(target, { px: Math.floor((VFX?.SHAKE_PX ?? 7) * 1.0), ms: vfxMs?.((VFX?.SHAKE_MS ?? 250) * 1.05) ?? ((VFX?.SHAKE_MS ?? 250) * 1.05) });
+    vfxFloatText?.(target, label, {
+      ms: vfxMs?.(ms) ?? ms,
+      fontSize: Math.floor((typeof vfxScale === 'function' ? vfxScale(16) : 16)),
+      color: textCol
     });
   } catch {}
 }
-
 
 function vfxPoisonTick(u, amount){
   vfxFlashColor(u, { color: 0x57ff7a, ms: vfxMs(300), alpha: 0.40 });
@@ -2561,18 +2641,19 @@ function vfxActCue(u, label, { ms = VFX.ACT_FLASH_MS } = {}){
 function teamArray(team){ return team==='player' ? player : enemy; }
 
 const VFX = {
-  PROJ_MS: 750,      // projectile travel time
+  PROJ_MS: 800,      // projectile travel time
   SHAKE_MS: 250,     // shake duration
   SHAKE_PX: 7,
   FLASH_MS: 250,     // flash pulse duration
   FLOAT_MS: 1750,    // damage/heal number linger
   ACT_FLASH_MS: 500, // attacker "acting" ping
+  CC_HEX: 0xb084ff,
 
   // Global knobs (COSMETIC ONLY)
-  TIME_SCALE: 1.75,        // >1 = slower VFX everywhere
-  GLOBAL_SCALE: 1.20,      // scales VFX sizes where applicable
+  TIME_SCALE: 1.85,        // >1 = slower VFX everywhere
+  GLOBAL_SCALE: 1.25,      // scales VFX sizes where applicable
   AOE_STAGGER_MS: 150,     // delay between targets for AoE readability
-  STATUS_TO_HEAL_MS: 125   // delay between status pop and heal pop
+  STATUS_TO_HEAL_MS: 150   // delay between status pop and heal pop
 };
 
 
@@ -2761,8 +2842,11 @@ if (dmgToApply > 0){
     }
     vfxShakePanel?.(finalTarget, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 220) });
     vfxFlashPanel?.(finalTarget, { ms: (VFX?.FLASH_MS ?? 250) });
-    vfxFloatText?.(finalTarget, `-${amount}`, { ms: (VFX?.FLOAT_MS ?? 1500), fontSize: crit ? 28 : 20 });
-  };
+    vfxFloatText?.(finalTarget, `-${amount}`, {
+  ms: vfxMs(VFX?.FLOAT_MS ?? 1500),
+  fontSize: Math.floor(vfxScale(crit ? 28 : 20)),
+  color: crit ? (VFX_COL?.crit || '#ffd37a') : (VFX_COL?.dmg || '#ff6b6b')
+});
 
   if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doImpact);
   else doImpact();

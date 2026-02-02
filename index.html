@@ -758,47 +758,48 @@ case 'Warrior': return [
          return r;
        }},
 
-     {
-  label:'Smoke Bomb',
-  desc:'Blind all enemies this round and heal for 15% of max HP.',
-  speed:'fast', type:'mag', target:'all-enemies',
+        {
+       label:'Smoke Bomb',
+       desc:'Blind all enemies this round and heal for 15% of max HP.',
+       speed:'fast', type:'mag', target:'all-enemies',
 
-  use:function(a, arr){
-    const targets = (arr || []).filter(t => t?.alive?.());
-    const scene = getScene?.();
+       use:function(a, arr){
+         const targets = (arr || []).filter(t => t?.alive?.());
+         const scene = getScene?.();
 
-    // --- MECHANICS: apply blind dur=1 (unchanged) ---
-    let n = 0;
-    for (const t of targets){
-      pushStatus(t, { key:'blind', dur:1 });
-      n++;
-    }
+         // --- MECHANICS: apply blind dur=1 (unchanged) ---
+         let n = 0;
+         for (const t of targets){
+           pushStatus(t, { key:'blind', dur:1 });
+           n++;
+         }
 
-    // --- VFX ONLY: caster -> each target, then BLIND tag after arrival ---
-    try {
-      const extraTagDelay = vfxMs?.(80) ?? 80;
+         // --- VFX ONLY: caster -> each target, then BLIND tag after arrival ---
+         try {
+           const extraTagDelay = vfxMs?.(80) ?? 80;
 
-      vfxCastToTargets?.(a, targets, {
-        label: 'Smoke Bomb',
-        proj: { ms: (VFX?.PROJ_MS ?? 750) * 0.85, color: (VFX?.CC_HEX ?? 0xb084ff), radius: 7 }, // purple CC language
-        onImpact: (t) => {
-          const doTag = () => vfxHardCC?.(a, t, 'blind', { ms: 800, showOrigin: false });
-          if (scene?.time?.delayedCall) scene.time.delayedCall(extraTagDelay, doTag);
-          else doTag();
-        },
-        staggerMs: (VFX?.AOE_STAGGER_MS ?? 150)
-      });
-    } catch {}
+           vfxCastToTargets?.(a, targets, {
+             label: 'Smoke Bomb',
+             proj: { ms: (VFX?.PROJ_MS ?? 750) * 0.85, color: (VFX?.CC_HEX ?? 0xb084ff), radius: 7 },
+             onImpact: (t) => {
+               const doTag = () => vfxHardCC?.(a, t, 'blind', { ms: 800, showOrigin: false });
+               if (scene?.time?.delayedCall) scene.time.delayedCall(extraTagDelay, doTag);
+               else doTag();
+             },
+             staggerMs: (VFX?.AOE_STAGGER_MS ?? 150)
+           });
+         } catch {}
 
-    // --- MECHANICS: self-heal 15% max HP (unchanged) ---
-    const healAmt = Math.max(1, Math.floor(a.maxHP * 0.15));
-    const out = applyHealAmount(a, a, healAmt, { abilityName: 'Smoke Bomb' });
+         // --- MECHANICS: self-heal 15% max HP (unchanged) ---
+         const healAmt = Math.max(1, Math.floor(a.maxHP * 0.15));
+         const out = applyHealAmount(a, a, healAmt, { abilityName: 'Smoke Bomb' });
 
-    appendLogHTML(`${a.name} throws <b>Smoke Bomb</b>! ${n} foe(s) are blinded. ${a.name} recovers ${out.healed} HP.`);
-  }
-},
+         appendLogHTML(`${a.name} throws <b>Smoke Bomb</b>! ${n} foe(s) are blinded. ${a.name} recovers ${out.healed} HP.`);
+       }
+     },
 
     ];
+
 
     /* ===== Cleric ===== */
 case 'Cleric': return [

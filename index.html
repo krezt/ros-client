@@ -2515,19 +2515,20 @@ g.disableInteractive?.();
 function teamArray(team){ return team==='player' ? player : enemy; }
 
 const VFX = {
-  PROJ_MS: 750,     // projectile travel time (was ~260)
-  SHAKE_MS: 250,    // shake duration (was ~120)
+  PROJ_MS: 750,      // projectile travel time
+  SHAKE_MS: 250,     // shake duration
   SHAKE_PX: 7,
-  FLASH_MS: 250,    // flash pulse duration
-  FLOAT_MS: 1750,    // damage number linger
+  FLASH_MS: 250,     // flash pulse duration
+  FLOAT_MS: 1750,    // damage/heal number linger
   ACT_FLASH_MS: 500, // attacker "acting" ping
-  // Global knobs (COSMETIC ONLY)
-  TIME_SCALE: 1.75,   // >1 = slower VFX everywhere
-  GLOBAL_SCALE: 1.20, // scales VFX sizes where applicable
-  AOE_STAGGER_MS: 150 // delay between targets for AoE readability
-  VFX.STATUS_TO_HEAL_MS = 125; // cosmetic only; increase if you want more separation
 
+  // Global knobs (COSMETIC ONLY)
+  TIME_SCALE: 1.75,        // >1 = slower VFX everywhere
+  GLOBAL_SCALE: 1.20,      // scales VFX sizes where applicable
+  AOE_STAGGER_MS: 150,     // delay between targets for AoE readability
+  STATUS_TO_HEAL_MS: 125   // delay between status pop and heal pop
 };
+
 
 function vfxMs(ms){
   return Math.max(0, Math.floor(ms * (VFX?.TIME_SCALE ?? 1)));

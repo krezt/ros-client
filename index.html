@@ -1592,6 +1592,16 @@ function vfxFloatText(u, text, { ms=900, fontSize=22, color='#ffffff', stroke='#
   const pos = panelCenterWorld(u);
   if (!scene || !pos) return;
 
+  // --- COSMETIC ONLY: prevent identical text popping twice instantly on same unit ---
+  const now = (scene.time && typeof scene.time.now === 'number') ? scene.time.now : Date.now();
+  const k = String(text);
+
+  const last = u._vfxTextLast || { t: -999999, k: '' };
+  const windowMs = vfxMs(140);
+  if (last.k === k && (now - last.t) < windowMs) return;
+  u._vfxTextLast = { t: now, k };
+
+
   // small stack offset so multiple pops don't sit on top of each other
   u._vfxPopN = (u._vfxPopN || 0) + 1;
   const stackOffset = Math.min(3, u._vfxPopN - 1) * 14;
@@ -2479,37 +2489,24 @@ function vfxPoisonTick(u, amount){
 
 function vfxActCue(u, label, { ms = VFX.ACT_FLASH_MS } = {}){
   if (!u) return;
+
+  // --- COSMETIC ONLY: prevent duplicate act cues in the same moment ---
+  const scene = getScene();
+  const now = (scene && scene.time && typeof scene.time.now === 'number') ? scene.time.now : Date.now();
+  const key = `${label || ''}`;
+
+  // If the same unit tries to show the same act cue again too soon, ignore it.
+  // (Fixes double/triple cues caused by stacked helpers.)
+  const last = u._vfxActCueLast || { t: -999999, key: '' };
+  const windowMs = vfxMs(140); // tune if needed (120–200ms usually perfect)
+  if (last.key === key && (now - last.t) < windowMs) return;
+  u._vfxActCueLast = { t: now, key };
+
+  // Original visuals
   vfxFlashColor(u, { color: 0xa7c4ff, ms: vfxMs(ms), alpha: 0.18 });
   if (label) vfxFloatText(u, label, { ms: vfxMs(700), fontSize: Math.floor(vfxScale(14)) });
 }
 
-function vfxFlashColor(u, { ms=225, color=0x57ff7a, alpha=0.35 } = {}){
-  const scene = getScene();
-  const panel = u?._ui?.panel;
-  if (!scene || !panel) return;
-
-  // draw a colored rectangle the same size as the panel, inside the panel container
-  const w = scene.PANEL_W || 380;
-  const h = scene.PANEL_H || 120;
-
-  const g = scene.add.graphics().setDepth(9997);
-  g.fillStyle(color, 1);
-  g.fillRect(0, 0, w, h);
-  g.setAlpha(alpha);
-g.disableInteractive?.();
-
-
-  // IMPORTANT: add it to the panel container so it moves with shake, etc.
-  panel.add(g);
-
-  scene.tweens.add({
-    targets: g,
-    alpha: 0,
-    duration: vfxMs(ms),
-    ease: 'Quad.easeOut',
-    onComplete: () => g.destroy()
-  });
-}
 
 /* ---------- team accessor ---------- */
 function teamArray(team){ return team==='player' ? player : enemy; }

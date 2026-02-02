@@ -2487,24 +2487,63 @@ function vfxPoisonTick(u, amount){
   });
 }
 
+function vfxFlashColor(u, { ms=225, color=0x57ff7a, alpha=0.35 } = {}){
+  const scene = getScene?.();
+  const panel = u?._ui?.panel;
+  if (!scene || !panel) return;
+
+  const w = scene.PANEL_W || 380;
+  const h = scene.PANEL_H || 120;
+
+  // Graphics overlay inside the unit's panel container
+  const g = scene.add.graphics().setDepth(9997);
+  g.fillStyle(color, 1);
+  g.fillRect(0, 0, w, h);
+  g.setAlpha(alpha);
+  g.disableInteractive?.();
+
+  // Attach to panel so it moves with shakes, etc.
+  panel.add(g);
+
+  scene.tweens.add({
+    targets: g,
+    alpha: 0,
+    duration: (typeof vfxMs === 'function' ? vfxMs(ms) : ms),
+    ease: 'Quad.easeOut',
+    onComplete: () => g.destroy()
+  });
+}
+
 function vfxActCue(u, label, { ms = VFX.ACT_FLASH_MS } = {}){
   if (!u) return;
 
   // --- COSMETIC ONLY: prevent duplicate act cues in the same moment ---
-  const scene = getScene();
-  const now = (scene && scene.time && typeof scene.time.now === 'number') ? scene.time.now : Date.now();
+  const scene = getScene?.();
+  const now = (scene?.time && typeof scene.time.now === 'number') ? scene.time.now : Date.now();
   const key = `${label || ''}`;
 
-  // If the same unit tries to show the same act cue again too soon, ignore it.
-  // (Fixes double/triple cues caused by stacked helpers.)
   const last = u._vfxActCueLast || { t: -999999, key: '' };
-  const windowMs = vfxMs(140); // tune if needed (120–200ms usually perfect)
+  const windowMs = vfxMs ? vfxMs(140) : 140;
   if (last.key === key && (now - last.t) < windowMs) return;
   u._vfxActCueLast = { t: now, key };
 
-  // Original visuals
-  vfxFlashColor(u, { color: 0xa7c4ff, ms: vfxMs(ms), alpha: 0.18 });
-  if (label) vfxFloatText(u, label, { ms: vfxMs(700), fontSize: Math.floor(vfxScale(14)) });
+  // --- SAFE calls (never crash gameplay if VFX helpers aren't loaded yet) ---
+  try {
+    // flash if available
+    if (typeof vfxFlashColor === 'function'){
+      vfxFlashColor(u, { color: 0xa7c4ff, ms: (typeof vfxMs === 'function' ? vfxMs(ms) : ms), alpha: 0.18 });
+    } else if (typeof vfxFlashPanel === 'function'){
+      vfxFlashPanel(u, { ms: (typeof vfxMs === 'function' ? vfxMs(ms) : ms) });
+    }
+
+    // label float if available
+    if (label && typeof vfxFloatText === 'function'){
+      vfxFloatText(u, label, {
+        ms: (typeof vfxMs === 'function' ? vfxMs(700) : 700),
+        fontSize: (typeof vfxScale === 'function' ? Math.floor(vfxScale(14)) : 14)
+      });
+    }
+  } catch {}
 }
 
 

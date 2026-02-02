@@ -1137,8 +1137,6 @@ case 'Cleric': return [
     // VFX: buff first, then heal slightly after (cosmetic only)
     vfxActCue?.(a, `Ranger's Focus`);
     vfxStatus?.(t, 'atk_up', { dur, kind:'buff' });
-    vfxFlashColor?.(t, { color: 0xa7ffb5, ms: vfxMs(450), alpha: 0.18 });
-    vfxFloatText?.(t, `ATK↑ ${dur}`, { ms: vfxMs(1200), fontSize: Math.floor(vfxScale(14)), color: (VFX_COL?.buff || '#a7c4ff') });
 
     const scene = getScene();
     const delay = vfxMs(VFX?.STATUS_TO_HEAL_MS ?? 90);
@@ -1706,28 +1704,40 @@ function vfxDodge(u){
 }
 
 function vfxStatus(u, key, { dur=null, kind='cc' } = {}){
-  const label = VFX_TEXT[key] || key.toUpperCase();
+  if (!u) return;
+
+  const label = VFX_TEXT?.[key] || String(key || '').toUpperCase();
   const col =
-    (key === 'poison') ? VFX_COL.poison :
-    (kind === 'cc')    ? VFX_COL.cc :
-    (kind === 'buff')  ? VFX_COL.buff :
-    (kind === 'debuff')? VFX_COL.debuff :
+    (key === 'poison') ? (VFX_COL?.poison || '#57ff7a') :
+    (kind === 'cc')    ? (VFX_COL?.cc     || '#ff6bd6') :
+    (kind === 'buff')  ? (VFX_COL?.buff   || '#a7c4ff') :
+    (kind === 'debuff')? (VFX_COL?.debuff || '#ffb36b') :
                          '#ffffff';
 
   // flash color overlay + label pop
-  if (typeof vfxFlashColor === 'function'){
-    const hex =
-      (key === 'poison') ? 0x57ff7a :
-      (kind === 'cc')    ? 0xff6bd6 :
-      (kind === 'buff')  ? 0xa7c4ff :
-      (kind === 'debuff')? 0xffb36b : 0xffffff;
-    vfxFlashColor(u, { color: hex, ms: 260, alpha: 0.18 });
-  } else {
-    vfxFlashPanel(u, { ms: 250 });
-  }
+  const hex =
+    (key === 'poison') ? 0x57ff7a :
+    (kind === 'cc')    ? 0xff6bd6 :
+    (kind === 'buff')  ? 0xa7c4ff :
+    (kind === 'debuff')? 0xffb36b :
+                         0xffffff;
 
-  vfxFloatText(u, dur ? `${label} (${dur})` : label, { color: col, fontSize: 22, ms: 1500 });
+  try {
+    if (typeof vfxFlashColor === 'function'){
+      vfxFlashColor(u, { color: hex, ms: vfxMs?.(260) ?? 260, alpha: 0.18 });
+    } else {
+      vfxFlashPanel?.(u, { ms: vfxMs?.(250) ?? 250 });
+    }
+  } catch {}
+
+  // IMPORTANT: respect global tuning knobs
+  vfxFloatText?.(u, dur ? `${label} (${dur})` : label, {
+    color: col,
+    fontSize: Math.floor((typeof vfxScale === 'function' ? vfxScale(18) : 18)),
+    ms: (typeof vfxMs === 'function' ? vfxMs(1200) : 1200)
+  });
 }
+
 
 function vfxHeal(u, amount){
   vfxFlashColor?.(u, { color: 0x7CFF9A, ms: 500, alpha: 0.14 });

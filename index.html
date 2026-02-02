@@ -2636,20 +2636,23 @@ function vfxActCue(u, label, { ms = VFX.ACT_FLASH_MS } = {}){
 function teamArray(team){ return team==='player' ? player : enemy; }
 
 const VFX = {
-  PROJ_MS: 800,      // projectile travel time
-  SHAKE_MS: 250,     // shake duration
+  PROJ_MS: 750,
+  SHAKE_MS: 250,
   SHAKE_PX: 7,
-  FLASH_MS: 250,     // flash pulse duration
-  FLOAT_MS: 1750,    // damage/heal number linger
-  ACT_FLASH_MS: 500, // attacker "acting" ping
-  CC_HEX: 0xb084ff,
+  FLASH_MS: 250,
+  FLOAT_MS: 1750,
+  ACT_FLASH_MS: 500,
 
   // Global knobs (COSMETIC ONLY)
-  TIME_SCALE: 1.85,        // >1 = slower VFX everywhere
-  GLOBAL_SCALE: 1.25,      // scales VFX sizes where applicable
-  AOE_STAGGER_MS: 150,     // delay between targets for AoE readability
-  STATUS_TO_HEAL_MS: 150   // delay between status pop and heal pop
+  TIME_SCALE: 1.75,
+  GLOBAL_SCALE: 1.20,
+  AOE_STAGGER_MS: 150,
+  STATUS_TO_HEAL_MS: 125,
+
+  // Hard CC language
+  CC_HEX: 0xb084ff
 };
+
 
 
 function vfxMs(ms){

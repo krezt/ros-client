@@ -2832,23 +2832,25 @@ if (dmgToApply > 0){
   const amount      = dmgToApply;
   const crit        = !!res.crit;
 
-  const doImpact = () => {
-    // If you later add vfxDamage() use it; otherwise use the raw helpers
+    const doImpact = () => {
     if (typeof vfxDamage === 'function'){
       vfxDamage(finalTarget, amount, { crit });
       return;
     }
-    vfxShakePanel?.(finalTarget, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 220) });
-    vfxFlashPanel?.(finalTarget, { ms: (VFX?.FLASH_MS ?? 250) });
+    vfxShakePanel?.(finalTarget, { px: (VFX?.SHAKE_PX ?? 6), ms: vfxMs(VFX?.SHAKE_MS ?? 220) });
+    vfxFlashPanel?.(finalTarget, { ms: vfxMs(VFX?.FLASH_MS ?? 250) });
+
     vfxFloatText?.(finalTarget, `-${amount}`, {
-  ms: vfxMs(VFX?.FLOAT_MS ?? 1500),
-  fontSize: Math.floor(vfxScale(crit ? 28 : 20)),
-  color: crit ? (VFX_COL?.crit || '#ffd37a') : (VFX_COL?.dmg || '#ff6b6b')
-});
+      ms: vfxMs(VFX?.FLOAT_MS ?? 1500),
+      fontSize: Math.floor(vfxScale(crit ? 28 : 20)),
+      color: crit ? (VFX_COL?.crit || '#ffd37a') : (VFX_COL?.dmg || '#ff6b6b')
+    });
+  };
 
   if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doImpact);
   else doImpact();
 }
+
 
 // ---- Combat log ----
 if (abilityName.toLowerCase()==='attack'){

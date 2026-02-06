@@ -476,9 +476,11 @@ __setWithVariants('mag',  'Premonition',   {proc:false});  // status only; type 
 // ---------- END overrides ----------
 
 /* ---------- jobs & stats ---------- */
-const ALL_CLASSES = ['Warrior','Barbarian','Rogue','Cleric','Mage','Paladin','Archer','Monk','Necromancer','Mystic'];
+const ALL_CLASSES = ['Shinobi','Warrior','Barbarian','Electromancer','Rogue','Cleric','Mage','Paladin','Archer','Monk','Necromancer','Mystic'];
 const JOBS = {
   Warrior:  { STR:26,QKN:16,INT:8, TGH:36, kind:'phys', name:'Warrior' },
+  Shinobi:  { STR:24,QKN:26,INT:10, TGH:25, kind:'phys', name:'Shinobi' },
+  Electromancer: { STR:10,QKN:15,INT:32, TGH:25, kind:'mag', name:'Electromancer' },
   Rogue:    { STR:22,QKN:30,INT:8,TGH:27,  kind:'phys', name:'Rogue' },
   Cleric:   { STR:7, QKN:18,INT:28,TGH:29, kind:'mag',  name:'Cleric' },
   Barbarian:{ STR:33,QKN:12, INT:7,TGH:34, kind:'phys', name:'Barbarian' },

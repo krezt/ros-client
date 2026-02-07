@@ -2983,7 +2983,7 @@ window.syncDeathState = syncDeathState;
 const VFX_COL = {
   dmg:   '#ff6b6b',
   crit:  '#ffd37a',
-  heal:  '#7CFF9A',
+  heal:  '#57ff7a',
   dodge: '#7ad7ff',
   cc:    '#b084ff',
   poison:'#57ff7a',
@@ -3570,6 +3570,43 @@ function canonicalizeChoices(mine, opp){
   return A.concat(B).sort().join(';');
 }
 
+function rehydrateTarget(stepTarget, allies, foes){
+  if (!stepTarget) return null;
+
+  // Already a live unit object?
+  if (typeof stepTarget.alive === 'function') return stepTarget;
+
+  const raw =
+    (typeof stepTarget === 'string') ? stepTarget :
+    String(stepTarget.netId ?? stepTarget.name ?? stepTarget.targetName ?? '');
+
+  if (!raw) return null;
+
+  const pool = [...allies, ...foes];
+
+  // 1) Exact netId match
+  let u = pool.find(x => String(x.netId ?? '') === raw);
+  if (u) return u;
+
+  // 2) Exact name match
+  u = pool.find(x => String(x.name ?? '') === raw);
+  if (u) return u;
+
+  // 3) Exact canonicalKey match ("side|name")
+  u = pool.find(x => (typeof canonicalKey === 'function') && canonicalKey(x) === raw);
+  if (u) return u;
+
+  // 4) If raw is "side|name", also match just the name portion
+  // (handles older payloads that lost side, or UI-only selection sending canonical)
+  if (raw.includes('|')){
+    const nameOnly = raw.split('|').slice(1).join('|'); // keep safe if names ever contain '|'
+    u = pool.find(x => String(x.name ?? '') === nameOnly);
+    if (u) return u;
+  }
+
+  return null;
+}
+
 /* ---------- resolve (simultaneous) ---------- */
 async function resolveSimultaneous(){
   const q=[...playerChoices, ...enemyChoices];
@@ -3641,50 +3678,71 @@ if (hasStatus(actor,'berserk')){
       }
     }
 
-    // normal exec
-    const { ability, target } = step;
-    if (ability.label==='Attack' && actor.kind==='phys' && hasStatus(actor,'blind') && rand()<0.5){ appendLog(`${actor.name} is blinded and whiffs!`); await sleep(ACTION_DELAY_MS); continue; }
-    // Target validity (permit dead ally if ability allows it, e.g. Resurrection)
-if (['enemy','ally'].includes(ability.target)){
+   // normal exec
+let { ability, target } = step;
+
+// Blind whiff gate (unchanged)
+if (ability.label==='Attack' && actor.kind==='phys' && hasStatus(actor,'blind') && rand()<0.5){
+  appendLog(`${actor.name} is blinded and whiffs!`);
+  await sleep(ACTION_DELAY_MS);
+  continue;
+}
+
+// ✅ You MUST define these BEFORE rehydrating
+const allies = (actor.team === 'player') ? player : enemy;
+const foes   = (actor.team === 'player') ? enemy  : player;
+
+// ✅ Rehydrate target (PvP-safe)
+target = rehydrateTarget(target, allies, foes);
+step.target = target; // optional but useful for debugging
+
+// ✅ Target validity (permit dead ally if ability allows it, e.g. Resurrection)
+if (['enemy','ally','any'].includes(ability.target)){
   const allowDead = !!ability.allowDeadTarget;
+
   if (!target || (!target.alive() && !allowDead)) {
     appendLog(`${actor.name}'s ${ability.label} misses (invalid target).`);
     await sleep(ACTION_DELAY_MS);
     continue;
   }
+
   if (hasStatus(target, 'invisible')) {
     appendLog(`${actor.name}'s ${ability.label} fails — ${target.name} can't be targeted (Invisibility).`);
     await sleep(ACTION_DELAY_MS);
     continue;
   }
-
 }
 
+// Set “currently using” labels AFTER target is known
+actor._usingAbilityLabel = ability.label;
+actor._usingAbilityMeta  = ability;
 
-    actor._usingAbilityLabel=ability.label; actor._usingAbilityMeta=ability;
-    const allies=actor.team==='player'?player:enemy; const foes=actor.team==='player'?enemy:player;
-
+// Debug probe
 if (ability?.label === 'Dispel') {
-  console.log('[DBG] invoking Dispel', {
+  console.log('[DBG Dispel resolve]', {
     actor: actor?.name,
-    targetName: target?.name,
     abilityTargetType: ability?.target,
+    rawStepTarget: step?.target,
+    hydratedTargetName: target?.name,
     hasUseFn: typeof ability?.use === 'function'
   });
 }
 
-    const doInvoke=async()=>(
-      typeof ability.use==='function'
-        ? ability.use.call(ability, actor,
-            ability.target==='enemy'       ? target :
-            ability.target==='ally'        ? target :
-            ability.target==='any'         ? target :     
-            ability.target==='self'        ? actor :
-            ability.target==='all-enemies' ? foes.filter(u=>u.alive()) :
-            ability.target==='all-allies'  ? allies.filter(u=>u.alive()) :
-            null)
-        : null
-    );
+const doInvoke = async () => (
+  typeof ability.use === 'function'
+    ? ability.use.call(
+        ability,
+        actor,
+        ability.target === 'enemy'       ? target :
+        ability.target === 'ally'        ? target :
+        ability.target === 'any'         ? target :
+        ability.target === 'self'        ? actor  :
+        ability.target === 'all-enemies' ? foes.filter(u=>u.alive()) :
+        ability.target === 'all-allies'  ? allies.filter(u=>u.alive()) :
+        null
+      )
+    : null
+);
 
     if (hasStatus(actor,'arcane_echo') && getAbilityType(actor,ability)==='mag' && !actor._echoing){
       await doInvoke();
@@ -3905,7 +3963,11 @@ async function confirmChoice(target){
     });
   }
 
-  playerChoices.push({ actor, ability, target });
+  playerChoices.push({
+  actor,
+  ability,
+  target: target ? { targetName: canonicalKey(target) } : null
+});
 
   const alive = player.filter(u=>u.alive());
   selectingIndex++;

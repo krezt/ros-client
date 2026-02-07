@@ -1015,48 +1015,57 @@ case 'Shinobi': return [
   speed: 'fast', type: 'mag', target: 'any',
 
   use: function(a, t){
-    if (!t) return;
+    // ALWAYS prove it fired
+    console.log('[Dispel] USE FIRED', a?.name, '->', t?.name);
 
-    // DEBUG (leave for now — it will prove if Dispel is firing)
-    console.log('[Dispel] fired by', a?.name, 'on', t?.name, 'status keys:', (t.status||[]).map(s=>s.key));
+    if (!t){
+      appendLog?.(`${a?.name || 'Someone'} tries to Dispel, but no target was passed.`);
+      return;
+    }
 
     const keep = new Set(['poison','bleed']);
-    const before = Array.isArray(t.status) ? t.status.slice() : [];
 
-    // Strip everything except poison/bleed
-    const after  = before.filter(s => keep.has(s.key));
+    const before = Array.isArray(t.status) ? t.status.slice() : [];
+    const beforeKeys = before.map(s => s?.key).filter(Boolean);
+
+    // Remove everything except poison/bleed
+    const after = before.filter(s => keep.has(s.key));
     t.status = after;
 
-    const removedKeys = before
-      .filter(s => !keep.has(s.key))
-      .map(s => s.key);
+    const removedKeys = beforeKeys.filter(k => !keep.has(k));
 
-    // refresh UI
-    try { updateStatusView?.(t); } catch {}
-    try { t._refresh?.(); } catch {}
+    // Refresh UI safely
+    try { updateStatusView?.(t); } catch (e) { console.warn('updateStatusView failed', e); }
+    try { t._refresh?.(); } catch (e) { console.warn('_refresh failed', e); }
 
-    // VFX (always show *something*)
+    // VFX (don’t rely on hit())
     try {
       vfxActCue?.(a, 'Dispel');
       vfxProjectile?.(a, t, { ms: 320, color: 0xa7c4ff, radius: 5 });
 
       const scene = getScene?.();
-      const impactDelay = Math.max(0, Math.floor((typeof vfxMs==='function' ? vfxMs(320) : 320) * 0.90));
+      const impactDelay = Math.max(0, Math.floor(((typeof vfxMs==='function'? vfxMs(320):320)) * 0.90));
       const doImpact = () => {
         vfxFlashColor?.(t, { color: 0xa7c4ff, ms: (typeof vfxMs==='function'? vfxMs(280):280), alpha: 0.20 });
-        vfxFloatText?.(t, `DISPEL`, { ms: (typeof vfxMs==='function'? vfxMs(1100):1100), fontSize: Math.floor((typeof vfxScale==='function'? vfxScale(14):14)), color: '#a7c4ff' });
+        vfxFloatText?.(t, `DISPEL`, {
+          ms: (typeof vfxMs==='function'? vfxMs(1100):1100),
+          fontSize: Math.floor((typeof vfxScale==='function'? vfxScale(14):14)),
+          color: '#a7c4ff'
+        });
       };
       if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doImpact);
       else doImpact();
-    } catch {}
+    } catch (e) {
+      console.warn('Dispel VFX failed', e);
+    }
 
-    // LOG (always)
+    // Combat log ALWAYS
     if (removedKeys.length){
-      appendLogHTML?.(`<span style="color:#a7c4ff">✨ ${a.name} dispels ${t.name}: removed <b>${removedKeys.join(', ')}</b>.</span>`);
-      if (!appendLogHTML) appendLog(`${a.name} dispels ${t.name}: removed ${removedKeys.join(', ')}.`);
+      appendLogHTML?.(`<span style="color:#a7c4ff">✨ ${a.name} dispels ${t.name}: removed <b>${removedKeys.join(', ')}</b>.</span>`)
+      || appendLog?.(`${a.name} dispels ${t.name}: removed ${removedKeys.join(', ')}.`);
     } else {
-      appendLogHTML?.(`<span style="color:#a7c4ff">✨ ${a.name} dispels ${t.name}, but nothing happens.</span>`);
-      if (!appendLogHTML) appendLog(`${a.name} dispels ${t.name}, but nothing happens.`);
+      appendLogHTML?.(`<span style="color:#a7c4ff">✨ ${a.name} dispels ${t.name}, but nothing happens.</span>`)
+      || appendLog?.(`${a.name} dispels ${t.name}, but nothing happens.`);
     }
   }
 },
@@ -3655,6 +3664,15 @@ if (['enemy','ally'].includes(ability.target)){
     actor._usingAbilityLabel=ability.label; actor._usingAbilityMeta=ability;
     const allies=actor.team==='player'?player:enemy; const foes=actor.team==='player'?enemy:player;
 
+if (ability?.label === 'Dispel') {
+  console.log('[DBG] invoking Dispel', {
+    actor: actor?.name,
+    targetName: target?.name,
+    abilityTargetType: ability?.target,
+    hasUseFn: typeof ability?.use === 'function'
+  });
+}
+
     const doInvoke=async()=>(
       typeof ability.use==='function'
         ? ability.use.call(ability, actor,
@@ -3835,7 +3853,17 @@ if (_pendingAbility.target === 'enemy' || _pendingAbility.target === 'ally' || _
       _pendingAbility=basic; _pendingTargetPick=false; _pendingAbilityTarget=null; target=ta.data.taunter; } }
 
   const ability=_pendingAbility; _pendingAbility=null;
-  playerChoices.push({ actor, ability, target });
+  if (ability?.label === 'Dispel') {
+  console.log('[DBG] queued Dispel', {
+    actor: actor?.name,
+    target: target?.name,
+    targetAlive: !!target?.alive?.(),
+    pendingTargetPick: _pendingTargetPick,
+    pendingAbilityTarget: _pendingAbilityTarget
+  });
+}
+
+playerChoices.push({ actor, ability, target });
 
   const alive=player.filter(u=>u.alive()); selectingIndex++;
 

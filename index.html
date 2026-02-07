@@ -824,29 +824,27 @@ const removed = beforeN - a.status.length;
 
   /* 6) Power Surge (slow) — AoE ally ATK buff (STACKS) */
   {
-    label: 'Power Surge',
-    desc: 'Empower all allies with ATK↑ (stacks).',
-    speed: 'slow', type: 'mag', target: 'all-allies',
+  label: 'Power Surge',
+  desc: 'Empower all allies with ATK↑ (stacks).',
+  speed: 'slow', type: 'mag', target: 'all-allies',
+  dur: 3,
 
-    dur: 3,
+  use: function(a, allies){
+    const list = Array.isArray(allies) ? allies.filter(u => u && u.alive()) : [];
+    const dur = this.dur;
 
-    use: function(a, allies){
-      const list = Array.isArray(allies) ? allies.filter(u => u && u.alive()) : [];
-      const dur = this.dur;
+    vfxActCue?.(a, this.label);
 
-      vfxActCue?.(a, this.label);
-
-      for (const t of list){
-        pushStatus(t, { key:'atk_up', dur });
-
-        // Cosmetic
-        vfxFlashColor?.(t, { color: 0xa7c4ff, ms: vfxMs(260), alpha: 0.14 });
-        vfxFloatText?.(t, `ATK↑ ${dur}`, { ms: vfxMs(1100), fontSize: Math.floor(vfxScale(13)), color: (VFX_COL?.buff || '#a7c4ff') });
-      }
-
-      appendLogHTML?.(`<span style="color:#a7c4ff">⚡ ${a.name} surges power through the team (ATK↑ ${dur}).</span>`);
+    for (const t of list){
+      pushStatus(t, { key:'atk_up', dur }); // <-- status VFX handled by pushStatus now
+      // keep a tiny non-status cosmetic if you want, but DON'T show ATK↑ text again:
+      vfxFlashColor?.(t, { color: 0xa7c4ff, ms: vfxMs(260), alpha: 0.14 });
     }
-  },
+
+    appendLogHTML?.(`<span style="color:#a7c4ff">⚡ ${a.name} surges power through the team (ATK↑ ${dur}).</span>`);
+  }
+},
+
 
 ];
 
@@ -1012,28 +1010,54 @@ case 'Shinobi': return [
   },
 
 {
-  label:'Dispel',
-  desc:'Remove all effects except poison/bleed from any target.',
-  speed:'fast', type:'mag', target:'any',
-  use:function(a,t){
+  label: 'Dispel',
+  desc: 'Remove all effects except poison/bleed from any target.',
+  speed: 'fast', type: 'mag', target: 'any',
+
+  use: function(a, t){
     if (!t) return;
 
+    // DEBUG (leave for now — it will prove if Dispel is firing)
+    console.log('[Dispel] fired by', a?.name, 'on', t?.name, 'status keys:', (t.status||[]).map(s=>s.key));
+
     const keep = new Set(['poison','bleed']);
-    const before = (t.status || []).length;
-    t.status = (t.status || []).filter(s => keep.has(s.key));
-    const removed = before - t.status.length;
+    const before = Array.isArray(t.status) ? t.status.slice() : [];
 
-    t._refresh?.(); updateStatusView?.(t);
+    // Strip everything except poison/bleed
+    const after  = before.filter(s => keep.has(s.key));
+    t.status = after;
 
-    // VFX (always show something)
+    const removedKeys = before
+      .filter(s => !keep.has(s.key))
+      .map(s => s.key);
+
+    // refresh UI
+    try { updateStatusView?.(t); } catch {}
+    try { t._refresh?.(); } catch {}
+
+    // VFX (always show *something*)
     try {
-      vfxProjectile?.(a, t, { ms: (VFX?.PROJ_MS ?? 750) * 0.75, color: 0xa7c4ff, radius: 6 });
-      vfxFlashColor?.(t, { color: 0xa7c4ff, ms: 300, alpha: 0.20 });
-      vfxFloatText?.(t, 'DISPEL', { ms: 1100, fontSize: Math.floor((typeof vfxScale==='function'?vfxScale(16):16)), color:'#a7c4ff' });
+      vfxActCue?.(a, 'Dispel');
+      vfxProjectile?.(a, t, { ms: 320, color: 0xa7c4ff, radius: 5 });
+
+      const scene = getScene?.();
+      const impactDelay = Math.max(0, Math.floor((typeof vfxMs==='function' ? vfxMs(320) : 320) * 0.90));
+      const doImpact = () => {
+        vfxFlashColor?.(t, { color: 0xa7c4ff, ms: (typeof vfxMs==='function'? vfxMs(280):280), alpha: 0.20 });
+        vfxFloatText?.(t, `DISPEL`, { ms: (typeof vfxMs==='function'? vfxMs(1100):1100), fontSize: Math.floor((typeof vfxScale==='function'? vfxScale(14):14)), color: '#a7c4ff' });
+      };
+      if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doImpact);
+      else doImpact();
     } catch {}
 
-    if (removed > 0) appendLogHTML?.(`<span style="color:#a7c4ff">✨ ${a.name} dispels ${t.name} (${removed} effects removed).</span>`);
-    else             appendLogHTML?.(`<span style="color:#a7c4ff">✨ ${a.name} dispels ${t.name}, but nothing happens.</span>`);
+    // LOG (always)
+    if (removedKeys.length){
+      appendLogHTML?.(`<span style="color:#a7c4ff">✨ ${a.name} dispels ${t.name}: removed <b>${removedKeys.join(', ')}</b>.</span>`);
+      if (!appendLogHTML) appendLog(`${a.name} dispels ${t.name}: removed ${removedKeys.join(', ')}.`);
+    } else {
+      appendLogHTML?.(`<span style="color:#a7c4ff">✨ ${a.name} dispels ${t.name}, but nothing happens.</span>`);
+      if (!appendLogHTML) appendLog(`${a.name} dispels ${t.name}, but nothing happens.`);
+    }
   }
 },
 
@@ -1053,14 +1077,12 @@ case 'Warrior': return [
   speed:'slow', type:'mag', target:'self',
 
   use:function(a){
-    // buffs (unchanged)
     const atkDur = 3;
     pushStatus(a, { key:'atk_up', dur: atkDur });
 
     const preDur = 2;
     pushStatus(a, { key:'premonition', dur: preDur });
 
-    // heal (same numbers)
     const healSpec = { heal:{ min:15, max:25 }, healCoef:0.18, scalesWith:'ATK', type:'mag' };
     const H = computeAbilityHeal(a, a, healSpec);
 
@@ -1071,19 +1093,12 @@ case 'Warrior': return [
     a._refresh && a._refresh();
     checkHPWarnings?.(a);
 
-    // VFX: show caster + buffs first (cosmetic)
+    // Keep ONE overhead cue for the action
     vfxActCue?.(a, 'Warhorn');
-    vfxStatus?.(a, 'atk_up', { dur: atkDur, kind:'buff' });
-    vfxFloatText?.(a, `ATK↑ ${atkDur}`, { ms: vfxMs(1200), fontSize: Math.floor(vfxScale(14)), color: (VFX_COL?.buff || '#a7c4ff') });
 
-    // If you want a visible cue for premonition too:
-    vfxStatus?.(a, 'premonition', { dur: preDur, kind:'buff' });
-    vfxFloatText?.(a, `FAST`, { ms: vfxMs(900), fontSize: Math.floor(vfxScale(13)), color: (VFX_COL?.buff || '#a7c4ff') });
-
-    // Heal VFX slightly after (cosmetic only)
+    // Heal VFX slightly after (still fine)
     const scene = getScene();
     const delay = vfxMs(VFX?.STATUS_TO_HEAL_MS ?? 90);
-
     if (healed > 0){
       const doHealVFX = () => vfxHealImpact?.(a, a, healed, 'Warhorn');
       if (scene?.time?.delayedCall) scene.time.delayedCall(delay, doHealVFX);
@@ -1251,16 +1266,12 @@ case 'Cleric': return [
     if (!t) return;
 
     const dur = buffDurBySDM(a);
-    pushStatus(t, { key: 'def_up', dur });
+    pushStatus(t, { key: 'def_up', dur }); // status VFX handled by pushStatus
 
-    // heal (same numbers as the ability)
     const H = computeAbilityHeal(a, t, this);
     const out = applyHealAmount(a, t, H, { abilityName: 'Defensive Aura', showVFX: false });
 
-    // VFX: show buff first, then heal number slightly after (cosmetic only)
     vfxActCue?.(a, 'Defensive Aura');
-    vfxStatus?.(t, 'def_up', { dur, kind:'buff' });
-    vfxFloatText?.(t, `DEF↑ ${dur}`, { ms: vfxMs(1200), fontSize: Math.floor(vfxScale(14)), color: (VFX_COL?.buff || '#a7c4ff') });
 
     const scene = getScene();
     const delay = vfxMs(VFX?.STATUS_TO_HEAL_MS ?? 90);
@@ -1272,7 +1283,6 @@ case 'Cleric': return [
     appendLog(`${a.name} blesses ${t.name} with Defensive Aura: DEF↑ (${dur}), healed for ${out.healed}.`);
   }
 },
-
 
   {
     label: 'Attack',
@@ -1551,7 +1561,7 @@ case 'Cleric': return [
     if (!t) return;
 
     const dur = buffDurBySDM(a);
-    pushStatus(t,{ key:'atk_up', dur });
+    pushStatus(t,{ key:'atk_up', dur }); // status VFX handled by pushStatus
 
     const H = computeAbilityHeal(a, t, this);
     const out = applyHealAmount(a, t, H, { abilityName: `Ranger's Focus`, showVFX: false });
@@ -1561,9 +1571,7 @@ case 'Cleric': return [
       t._deadLogged = false;
     }
 
-    // VFX: buff first, then heal slightly after (cosmetic only)
     vfxActCue?.(a, `Ranger's Focus`);
-    vfxStatus?.(t, 'atk_up', { dur, kind:'buff' });
 
     const scene = getScene();
     const delay = vfxMs(VFX?.STATUS_TO_HEAL_MS ?? 90);
@@ -2254,16 +2262,27 @@ function hasStatus(u,key){ return u.status && u.status.some(s=>s.key===key); }
 
 function countStacks(u, key){ let n=0; for(const s of (u.status||[])) if (s.key===key) n++; return n; }
 
-function pushStatus(u, st){
+function pushStatus(u, st, opts = null){
   if (!u || !st) return;
   if (!u.status) u.status = [];
 
+  const showVFX = (opts && opts.showVFX === false) ? false : true;
+
   const key = st.key;
+  // --- COSMETIC ONLY: de-dupe VFX for the same status key in the same moment ---
+  const scene = getScene?.();
+  const now = (scene?.time && typeof scene.time.now === 'number') ? scene.time.now : Date.now();
+  const windowMs = (typeof vfxMs === 'function') ? (vfxMs(140) ?? 140) : 140;
+
+  if (!u._statusVfxLast) u._statusVfxLast = {};
+  const last = u._statusVfxLast[key] || -999999;
+  const vfxAllowedThisCall = (now - last) >= windowMs;
+  if (vfxAllowedThisCall) u._statusVfxLast[key] = now;
+
   let wasNew = false;
   let appliedDur = (st.dur|0);
 
   if (STACKABLE.has(key)) {
-    // stacks are always "new instances"
     const dur = Math.max(1, st.dur|0);
     u.status.push({ key, dur, data:{ stack:1 } });
     wasNew = true;
@@ -2277,8 +2296,6 @@ function pushStatus(u, st){
       const before = existing.dur|0;
       existing.dur = Math.min(cap, (existing.dur|0) + add);
       appliedDur = existing.dur|0;
-
-      // If duration didn't actually increase, don’t spam VFX
       wasNew = (existing.dur|0) > before;
     } else {
       u.status.push({ key, dur: (st.dur|0), data: st.data });
@@ -2287,7 +2304,6 @@ function pushStatus(u, st){
     }
 
   } else {
-    // non-stack, non-CC
     u.status.push(st);
     wasNew = true;
     appliedDur = (st.dur|0);
@@ -2295,8 +2311,8 @@ function pushStatus(u, st){
 
   updateStatusView(u);
 
-  // VFX: only on meaningful application
-  if (wasNew && typeof vfxStatus === 'function') {
+  // ✅ VFX: only if allowed
+    if (showVFX && wasNew && vfxAllowedThisCall && typeof vfxStatus === 'function') {
     try {
       if (key === 'poison') {
         vfxStatus(u, 'poison', { kind:'debuff' });
@@ -2310,6 +2326,7 @@ function pushStatus(u, st){
     } catch {}
   }
 }
+
 
 function removeStatusKey(u, key){
   if (!u || !u.status) return false;
@@ -4026,7 +4043,6 @@ ensureUnitSides();
   }
 
   // OPTIONAL: Shift blocks *physical* direct-target abilities
-  // (does not affect AoE because AoE doesn’t go through this click path)
   if (hasStatus(u,'shift') && (ab.type === 'phys')){
     appendLog(`${u.name} is Shifted and can't be targeted by physical attacks.`);
     vfxFloatText?.(u, 'SHIFT', {
@@ -4037,6 +4053,7 @@ ensureUnitSides();
     return;
   }
 
+  // ✅ valid target, proceed
   confirmChoice(u);
 });
 

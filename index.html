@@ -574,7 +574,12 @@ function applyHeal(caster, target, healSpecOrAbility, {
     try {
       // green pop + green tint
       vfxFlashColor?.(target, { color: 0xa7ffb5, ms: 450, alpha: 0.16 });
-      vfxFloatText?.(target, `+${healed}`, { ms: (VFX?.FLOAT_MS ?? 1500), fontSize: 22 });
+      vfxFloatText?.(target, `+${healed}`, {
+  color: (VFX_COL?.heal || '#57ff7a'),
+  ms: (VFX?.FLOAT_MS ?? 1500),
+  fontSize: 22
+});
+
     } catch {}
   }
 
@@ -1881,17 +1886,12 @@ case 'Cleric': return [
             const when = (i * step) + impactDelay;
             const amt  = res.dmg|0;
             scene.time.delayedCall(when, () => {
-              vfxFloatText?.(t, `PLAGUE`, {
-                ms: ms(850),
-                fontSize: Math.floor(sc(16)),
-                color: (VFX_COL?.poison || '#57ff7a')
-              });
-              vfxFloatText?.(t, `+${amt} POISON`, {
-                ms: ms(1100),
-                fontSize: Math.floor(sc(16)),
-                color: (VFX_COL?.poison || '#57ff7a')
-              });
-            });
+  vfxFloatText?.(t, `-${amt} POISON`, {
+    ms: ms(1100),
+    fontSize: Math.floor(sc(16)),
+    color: (VFX_COL?.poison || '#57ff7a')
+  });
+});
           }
         } catch {}
 
@@ -2257,10 +2257,24 @@ function vfxStatus(u, key, { dur=null, kind='cc' } = {}){
 }
 
 
-function vfxHeal(u, amount){
-  vfxFlashColor?.(u, { color: 0x7CFF9A, ms: 500, alpha: 0.14 });
-  vfxFloatText(u, `+${amount}`, { color: VFX_COL.heal, fontSize: 22, ms: 1500 });
+function vfxHeal(u, amount, opts = {}){
+  if (!u || !amount) return;
+
+  const ms   = (x)=> (typeof vfxMs==='function' ? vfxMs(x) : (x|0));
+  const sc   = (x)=> (typeof vfxScale==='function' ? vfxScale(x) : x);
+
+  // Prefer your configured heal color, but always fall back to green
+  const col = (VFX_COL?.heal || '#7CFF9A');
+
+  vfxFlashColor?.(u, { color: 0x7CFF9A, ms: ms(opts.flashMs ?? 500), alpha: 0.14 });
+
+  vfxFloatText?.(u, `+${amount|0}`, {
+    color: col,                           // force a valid color
+    fontSize: Math.floor(sc(opts.fontSize ?? 22)),
+    ms: ms(opts.ms ?? 1500)
+  });
 }
+
 
 /* ===== PART 2/4 — ENGINE HELPERS ===== */
 /* ---------- Status & stacking ---------- */
@@ -2634,20 +2648,35 @@ function applyHeal(caster, target, amount, { abilityName='Heal' } = {}){
   return { healed };
 }
 
-function vfxHealImpact(caster, target, healed, label='Heal'){
-  if (!target || healed <= 0) return;
+function vfxHealImpact(caster, target, healed, label = 'Heal') {
+  if (!target || (healed | 0) <= 0) return;
 
-  if (caster) vfxActCue?.(caster, label);
+  const ms = (x) => (typeof vfxMs === 'function' ? vfxMs(x) : (x | 0));
 
-  // NEW: travel caster -> target (if caster exists and differs)
+  // Match your heal green everywhere (VFX_COL.heal = '#57ff7a')
+  const HEAL_HEX = 0x57ff7a;
+  const HEAL_COL = (VFX_COL?.heal || '#57ff7a');
+
+  // Who cast it (optional cue)
+  try { if (caster) vfxActCue?.(caster, label); } catch {}
+
+  // Travel caster -> target (optional)
   try {
-    if (caster && caster !== target && typeof vfxProjectile === 'function'){
-      vfxProjectile(caster, target, { ms: vfxMs(360), color: 0xa7ffb5, radius: 6 });
+    if (caster && caster !== target && typeof vfxProjectile === 'function') {
+      vfxProjectile(caster, target, { ms: ms(360), color: HEAL_HEX, radius: 6 });
     }
   } catch {}
 
-  vfxFlashColor?.(target, { color: 0xa7ffb5, ms: vfxMs(450), alpha: 0.18 });
-  vfxFloatText?.(target, `+${healed}`, { ms: vfxMs(VFX?.FLOAT_MS ?? 1500), fontSize: Math.floor(vfxScale(22)) });
+  // Impact flash + number
+  try { vfxFlashColor?.(target, { color: HEAL_HEX, ms: ms(450), alpha: 0.18 }); } catch {}
+
+  try {
+    vfxFloatText?.(target, `+${healed | 0}`, {
+      ms: ms(VFX?.FLOAT_MS ?? 1500),
+      fontSize: 22,     // vfxFloatText scales internally
+      color: HEAL_COL   // CSS string
+    });
+  } catch {}
 }
 
 window.testHealVFX = function(){

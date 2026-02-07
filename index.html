@@ -3989,7 +3989,8 @@ async function confirmChoice(target){
   playerChoices.push({
   actor,
   ability,
-  target: target ? { targetName: canonicalKey(target) } : null
+  // store the actual unit object locally; wire conversion happens in choiceToWire()
+  target: target || null
 });
 
   const alive = player.filter(u=>u.alive());
@@ -4681,14 +4682,20 @@ assignNetIds(); // assigns netId based on current role
   function choiceToWire(c){
   const abTarget = c.ability?.target;
 
+  // Target can be:
+  // - a live unit object (preferred locally)
+  // - a wire object { targetName }
+  const tn =
+    (abTarget === 'self') ? null :
+    (!c.target) ? null :
+    (typeof c.target.alive === 'function')
+      ? (typeof canonicalKey === 'function' ? canonicalKey(c.target) : (c.target.name || null))
+      : (c.target.targetName ?? c.target.name ?? c.target.netId ?? null);
+
   return {
     actorName:    c.actor?.name || '',
     abilityLabel: c.ability?.label || 'Attack',
-
-    // IMPORTANT: Use canonicalKey for PvP-safe identity
-    targetName:
-      (abTarget === 'self') ? null :
-      (c.target ? (typeof canonicalKey === 'function' ? canonicalKey(c.target) : (c.target.name || '')) : null)
+    targetName:   tn
   };
 }
 window.choiceToWire = choiceToWire;

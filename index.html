@@ -1332,8 +1332,8 @@ case 'Cleric': return [
     // --- VFX ONLY: who cast + caster->each ally motion ---
     try {
       vfxCastToTargets?.(a, allies, {
-        label: `Enid's Blessing`,
-        proj: { ms: (VFX?.PROJ_MS ?? 750) * 1.10, color: 0xa7ffb5, radius: 7 },
+        label: ``,
+        proj: { ms: (VFX?.PROJ_MS ?? 750) * 1.10, color: 0x57ff7a, radius: 7 },
         onImpact: (t) => {
           vfxFlashColor?.(t, { color: 0xa7ffb5, ms: 360, alpha: 0.20 });
         },
@@ -1353,11 +1353,10 @@ case 'Cleric': return [
       healedTotal += healed;
 
       const wasPoisoned = hasStatus(ally, 'poison');
-      if (wasPoisoned){
-        removeStatusKey(ally, 'poison');
-        curedCount++;
-        vfxStatus?.(ally, 'cure', { kind:'buff' });
-      }
+if (wasPoisoned){
+  removeStatusKey(ally, 'poison');
+  curedCount++;
+}
 
       ally._refresh && ally._refresh();
       checkHPWarnings(ally);
@@ -1366,9 +1365,10 @@ case 'Cleric': return [
       if (healed > 0){
         vfxFlashColor?.(ally, { color: 0xa7ffb5, ms: 450, alpha: 0.18 });
         vfxFloatText?.(ally, `+${healed}`, {
-          ms: vfxMs(VFX?.FLOAT_MS ?? 1250),
-          fontSize: Math.floor(vfxScale(22))
-        });
+  ms: vfxMs(VFX?.FLOAT_MS ?? 1250),
+  fontSize: 22,
+  color: (VFX_COL?.heal || '#57ff7a') // optional: explicit green, though your vfxFloatText now defaults +numbers to heal green
+});
       }
 
       // --- COSMETIC ONLY: impact-timed extras (CURED tag) ---
@@ -2196,6 +2196,73 @@ function vfxProjectile(a, t, { ms=260, color=0xffffff, radius=5 } = {}){
     ease: 'Quad.easeInOut',
     onComplete: () => g.destroy()
   });
+}
+
+function vfxCastToTargets(caster, targets, {
+  label = '',
+  proj = { ms: 750, color: 0xffffff, radius: 6 },
+  onImpact = null,
+  staggerMs = 140
+} = {}) {
+  const scene = getScene?.();
+  const list = (targets || []).filter(t => t);
+
+  if (!scene || !list.length) return;
+
+  const ms = (x) => (typeof vfxMs === 'function' ? vfxMs(x) : (x | 0));
+  const step = ms(staggerMs | 0);
+
+  // announce caster once (optional)
+  try { if (caster && label) vfxActCue?.(caster, label); } catch {}
+
+  // compute projectile duration + impact delay
+  const projMs = ms(proj?.ms ?? 750);
+  const impactDelay = Math.max(0, Math.floor(projMs * 0.90));
+
+  // stable order (prevents random-looking AOE)
+  const ordered = [...list].sort((a, b) =>
+    String(a.netId ?? a.name ?? '').localeCompare(String(b.netId ?? b.name ?? ''))
+  );
+
+  ordered.forEach((t, i) => {
+    const startDelay = i * step;
+
+    const doTravel = () => {
+      try {
+        if (caster && caster !== t && typeof vfxProjectile === 'function') {
+          vfxProjectile(caster, t, {
+            ms: projMs,
+            color: proj?.color ?? 0xffffff,
+            radius: proj?.radius ?? 6
+          });
+        }
+      } catch {}
+
+      const doImpact = () => {
+        if (label) {
+  try {
+    vfxFloatText?.(t, label, {
+      ms: ms(850),
+      fontSize: 14,
+      color: hexToCss(proj?.color ?? 0xffffff)
+    });
+  } catch {}
+}
+
+        try { onImpact?.(t, i); } catch {}
+      };
+
+      if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doImpact);
+      else doImpact();
+    };
+
+    if (scene?.time?.delayedCall) scene.time.delayedCall(startDelay, doTravel);
+    else doTravel();
+  });
+}
+
+function hexToCss(hex){
+  return '#' + ((hex >>> 0).toString(16).padStart(6,'0'));
 }
 
 // Optional: call once to animate KO a little

@@ -1776,6 +1776,7 @@ case 'Cleric': return [
   base:{min:20,max:65}, statCoef:0.30,
 
   use:function(a, arr){
+    console.log('[Plague] use fired (version A)', a?.name, 'targets=', (arr||[]).length);
     const aliveTargets = (arr || []).filter(t => t?.alive?.());
     if (!aliveTargets.length){
       appendLog?.(`${a.name} casts Plague, but there are no targets.`);
@@ -1810,7 +1811,7 @@ case 'Cleric': return [
       if (typeof vfxCastToTargets === 'function'){
         usedAOEVFX = true;
         vfxCastToTargets(a, targets, {
-          label: 'Plague',
+          label: '',
           proj: { ms: projMsRaw, color: 0x57ff7a, radius: 7 },
           onImpact: (t) => {
             // impact flash only (numbers/text handled below on the same timing)
@@ -2103,28 +2104,44 @@ function vfxShakePanel(u, { px=6, ms=160 } = {}){
   });
 }
 
-function vfxFloatText(u, text, { ms=900, fontSize=22, color='#ffffff', stroke='#000000', rise=26, dx=0 } = {}){
+function vfxFloatText(u, text, { ms=900, fontSize=22, color=null, stroke='#000000', rise=26, dx=0 } = {}){
   const scene = getScene();
   const pos = panelCenterWorld(u);
   if (!scene || !pos) return;
 
+  // Normalize
+  let s = String(text ?? '');
+
   // --- COSMETIC ONLY: prevent identical text popping twice instantly on same unit ---
   const now = (scene.time && typeof scene.time.now === 'number') ? scene.time.now : Date.now();
-  const k = String(text);
+  const k = s;
 
   const last = u._vfxTextLast || { t: -999999, k: '' };
-  const windowMs = vfxMs(140);
+  const windowMs = (typeof vfxMs === 'function') ? vfxMs(140) : 140;
   if (last.k === k && (now - last.t) < windowMs) return;
   u._vfxTextLast = { t: now, k };
 
+  // ✅ SMART DEFAULTS when caller didn't pass a color
+  if (!color) {
+    if (/^\+\d+/.test(s)) color = (VFX_COL?.heal || '#57ff7a');                 // heals
+    else if (/^-\d+/.test(s)) color = (VFX_COL?.dmg || '#ff6b6b');             // damage
+    else color = '#ffffff';
+  }
+
+  // ✅ Normalize poison application semantics: "+X POISON" -> "-X POISON"
+  // (purely cosmetic; helps old callers you haven't found yet)
+  if (/^\+\d+\s*POISON\b/i.test(s)) {
+    s = s.replace(/^\+/, '-');
+    if (!color || color === '#ffffff') color = (VFX_COL?.poison || '#57ff7a');
+  }
 
   // small stack offset so multiple pops don't sit on top of each other
   u._vfxPopN = (u._vfxPopN || 0) + 1;
   const stackOffset = Math.min(3, u._vfxPopN - 1) * 14;
 
-  const t = scene.add.text(pos.x + dx, pos.y - stackOffset, text, {
+  const t = scene.add.text(pos.x + dx, pos.y - stackOffset, s, {
     fontFamily: 'monospace',
-    fontSize: `${Math.floor(vfxScale(fontSize))}px`,
+    fontSize: `${Math.floor((typeof vfxScale === 'function' ? vfxScale(fontSize) : fontSize))}px`,
     fontStyle: 'bold',
     color,
     stroke,
@@ -2135,7 +2152,7 @@ function vfxFloatText(u, text, { ms=900, fontSize=22, color='#ffffff', stroke='#
     targets: t,
     y: t.y - rise,
     alpha: 0,
-    duration: vfxMs(ms),
+    duration: (typeof vfxMs === 'function') ? vfxMs(ms) : ms,
     ease: 'Quad.easeOut',
     onComplete: () => {
       t.destroy();

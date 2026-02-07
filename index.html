@@ -3593,74 +3593,104 @@ if (['enemy','ally'].includes(ability.target)){
 
 /* ---------- action bar (final) ---------- */
 function renderActionBarForCurrent(){
-// If I'm waiting for opponent in PvP, show a small waiting stub instead of inputs
-if (PVP && PVP.phase === 'battle' && PVP.waitingForOpp) {
-  actionButtonsEl.innerHTML = '';
-  actionPromptEl.textContent = `Round ${roundNumber} — Waiting for opponent…`;
-  const stub = document.createElement('div');
-  stub.style.cssText = 'opacity:.85;font-size:12px;text-align:center;padding:8px;';
-  stub.textContent = 'Choices submitted. Waiting for the other side...';
-  actionButtonsEl.appendChild(stub);
-  return;
-}
+  // If I'm waiting for opponent in PvP, show a small waiting stub instead of inputs
+  if (PVP && PVP.phase === 'battle' && PVP.waitingForOpp) {
+    actionButtonsEl.innerHTML = '';
+    actionPromptEl.textContent = `Round ${roundNumber} — Waiting for opponent…`;
+    const stub = document.createElement('div');
+    stub.style.cssText = 'opacity:.85;font-size:18px;text-align:center;padding:8px;';
+    stub.textContent = 'Choices submitted. Waiting for the other side...';
+    actionButtonsEl.appendChild(stub);
+    return;
+  }
 
   if (!actionButtonsEl || !actionPromptEl) initActionBarShell();
-  actionButtonsEl.innerHTML='';
+  actionButtonsEl.innerHTML = '';
 
-  const actor=currentActor(); if(!actor){ actionPromptEl.textContent=''; return; }
-  actionPromptEl.textContent=`Choose action for ${actor.name}`;
+  const actor = currentActor();
+  if (!actor){ actionPromptEl.textContent=''; return; }
+  actionPromptEl.textContent = `Choose action for ${actor.name}`;
 
   const makeButton = (ability) => {
-  const btn = document.createElement('button');
-  btn.className = 'action-btn';
+    const btn = document.createElement('button');
+    btn.className = 'action-btn';
 
-  const s = ability.speed || 'normal';
-  const on = { fast:3, normal:2, slow:1 }[s] ?? 2;
+    const s = ability.speed || 'normal';
+    const on = { fast:3, normal:2, slow:1 }[s] ?? 2;
 
-  btn.innerHTML = `
-    <div class="btn-inner">
-      <div class="text">
-        <div class="label">${ability.label}</div>
-        <div class="desc">${ability.desc || ''}</div>
+    btn.innerHTML = `
+      <div class="btn-inner">
+        <div class="text">
+          <div class="label">${ability.label}</div>
+          <div class="desc">${ability.desc || ''}</div>
+        </div>
+        <div class="speed ${s}" title="${s}">
+          <span class="dot ${on >= 1 ? '' : 'off'}"></span>
+          <span class="dot ${on >= 2 ? '' : 'off'}"></span>
+          <span class="dot ${on >= 3 ? '' : 'off'}"></span>
+        </div>
       </div>
-      <div class="speed ${s}" title="${s}">
-        <span class="dot ${on >= 1 ? '' : 'off'}"></span>
-        <span class="dot ${on >= 2 ? '' : 'off'}"></span>
-        <span class="dot ${on >= 3 ? '' : 'off'}"></span>
-      </div>
-    </div>
-  `;
+    `;
 
-  btn.onclick = () => {
-    _pendingAbility = ability;
-    if (ability.target === 'enemy' || ability.target === 'ally' || ability.target === 'any') {
-      _pendingTargetPick = true;
-      _pendingAbilityTarget = ability.target;
-    } else {
-      _pendingTargetPick = false;
-      _pendingAbilityTarget = null;
-      confirmChoice(null);
-    }
-    updateTopBarForCurrentSelection();
+    btn.onclick = () => {
+      _pendingAbility = ability;
+
+      if (ability.target === 'enemy' || ability.target === 'ally' || ability.target === 'any') {
+        _pendingTargetPick = true;
+        _pendingAbilityTarget = ability.target;
+      } else {
+        _pendingTargetPick = false;
+        _pendingAbilityTarget = null;
+        confirmChoice(null);
+      }
+
+      updateTopBarForCurrentSelection();
+    };
+
+    return btn;
   };
 
-  return btn;
-};
+  // ✅ FIX 1: Real placeholder button factory (no "..." anywhere)
+  const makePlaceholder = () => {
+    const ph = document.createElement('button');
+    ph.className = 'action-btn placeholder';
+    ph.disabled = true;
+    ph.innerHTML = `
+      <div class="btn-inner">
+        <div class="text">
+          <div class="label">Empty</div>
+          <div class="desc"></div>
+        </div>
+      </div>
+    `;
+    return ph;
+  };
 
-  const raw=abilitiesFor(actor)||[]; const isAttack=a=>a&&(a.isBasic||(a.label&&a.label.toLowerCase()==='attack'));
-  const attack=raw.find(isAttack); const others=raw.filter(a=>!isAttack(a));
-  const rank={fast:0,normal:1,slow:2}; others.sort((a,b)=>(rank[a.speed]??1)-(rank[b.speed]??1)||(a.label||'').localeCompare(b.label||''));
+  const raw = abilitiesFor(actor) || [];
+  const isAttack = a => a && (a.isBasic || (a.label && a.label.toLowerCase()==='attack'));
 
-  const picks=[];
-if(attack) picks.push(attack);
-for(const ab of others){
-  if(picks.length>=6) break;
-  picks.push(ab);
+  const attack = raw.find(isAttack);
+  const others = raw.filter(a => !isAttack(a));
+
+  const rank = { fast:0, normal:1, slow:2 };
+  others.sort((a,b) =>
+    (rank[a.speed] ?? 1) - (rank[b.speed] ?? 1) ||
+    (a.label || '').localeCompare(b.label || '')
+  );
+
+  const picks = [];
+  if (attack) picks.push(attack);
+  for (const ab of others){
+    if (picks.length >= 6) break;
+    picks.push(ab);
+  }
+
+  for (let i=0; i<6; i++){
+    const node = picks[i] ? makeButton(picks[i]) : makePlaceholder();
+    actionButtonsEl.appendChild(node);
+  }
 }
-for (let i=0;i<6;i++){
-  const node = picks[i] ? makeButton(picks[i]) : (() => { ...placeholder... })();
-  actionButtonsEl.appendChild(node);
-}
+
 
 /* ---------- confirm (SP version) ---------- */
 async function confirmChoice(target){
@@ -3675,15 +3705,18 @@ _pendingAbility = null;
   }
   if (!_pendingAbility){ appendLog('Choose an ability first.'); return; }
 
-  if ((_pendingAbility.target==='enemy'||_pendingAbility.target==='ally')) {
-  const allowDead = !!_pendingAbility.allowDeadTarget;
-  
-if ((_pendingAbility.target==='enemy'||_pendingAbility.target==='ally'||_pendingAbility.target==='any')) {
+  // Target validity (permit dead ally if ability allows it, e.g. Resurrection)
+if (_pendingAbility.target === 'enemy' || _pendingAbility.target === 'ally' || _pendingAbility.target === 'any') {
   const allowDead = !!_pendingAbility.allowDeadTarget;
 
-  if (_pendingTargetPick && _pendingAbility && target && hasStatus(target,'invisible')) {
+  // Invisibility blocks direct targeting
+  if (_pendingTargetPick && target && hasStatus(target,'invisible')) {
     appendLog(`${target.name} is invisible and can't be targeted.`);
-    vfxFloatText?.(target, 'INVISIBLE', { ms: vfxMs(1250), fontSize: Math.floor(vfxScale(14)), color: '#bdbdff' });
+    vfxFloatText?.(target, 'INVISIBLE', {
+      ms: vfxMs(1250),
+      fontSize: Math.floor(vfxScale(14)),
+      color: '#bdbdff'
+    });
     return;
   }
 
@@ -3694,7 +3727,6 @@ if ((_pendingAbility.target==='enemy'||_pendingAbility.target==='ally'||_pending
     return;
   }
 }
-
 
   const ta=actor.status.find(s=>s.key==='taunt'&&s.dur>0&&s.data?.taunter?.alive?.());
   if (ta){ const isBasic=a=>a&&(a.isBasic||(a.label&&a.label.toLowerCase()==='attack')); const basic=abilitiesFor(actor).find(isBasic);

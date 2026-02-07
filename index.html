@@ -524,8 +524,10 @@ class Unit{
 
 // One-line blurbs for draft UI
 window.CLASS_BLURBS = {
+  Shinobi: "Utility fighter, lethal combo abilities and attacks.",
   Warrior: "Frontline protector with taunt and team shielding.",
   Barbarian: "High damage bruiser who breaks defenses and snowballs on kills.",
+  Electromancer: "Explosive caster with dangerous and volatile lightning magic.",
   Rogue: "Fast skirmisher with poison, blinds, and burst crits.",
   Cleric: "Team healer with buffs and a single resurrection.",
   Mage: "Explosive caster with stuns and heavy AoE.",
@@ -632,49 +634,47 @@ case 'Electromancer': return [
 
   /* 2) Electrical Storm (fast) — AoE chip + AoE heal + small chance to stun enemies (dur 1) */
   {
-    label: 'Electrical Storm',
-    desc: 'Zap enemies and energize allies. Small chance to stun enemies (1).',
-    speed: 'fast', type: 'mag', target: 'all-enemies',
+  label: 'Electrical Storm',
+  desc: 'Zap enemies and energize allies. Small chance to stun enemies (1).',
+  speed: 'fast', type: 'mag', target: 'all-enemies',
 
-    base: { min: 10, max: 18 }, statCoef: 0.25,
-    heal: { min: 8, max: 14 }, healCoef: 0.18, scalesWith: 'SDM',
+  base: { min: 10, max: 18 }, statCoef: 0.25,
+  heal: { min: 8, max: 14 }, healCoef: 0.18, scalesWith: 'SDM',
 
-    stunChance: 0.10,
+  stunChance: 0.10,
 
-    use: function(a, foes){
-      const allies = (a.team === 'player') ? player : enemy;
-      const enemies = Array.isArray(foes) ? foes.filter(u => u && u.alive()) : [];
-      const friends = allies.filter(u => u && u.alive());
+  use: function(a, foes){
+    const allies  = (a.team === 'player') ? player : enemy;
+    const enemies = Array.isArray(foes) ? foes.filter(u => u && u.alive()) : [];
+    const friends = allies.filter(u => u && u.alive());
 
-      vfxActCue?.(a, this.label);
+    vfxActCue?.(a, this.label);
 
-      // Cosmetic: caster -> all enemies (staggered)
-      try {
-        vfxCastToTargets?.(a, enemies, {
-          label: this.label,
-          proj: { ms: (VFX?.PROJ_MS ?? 750) * 0.80, color: 0xa7c4ff, radius: 6 },
-          onImpact: (t) => vfxFlashColor?.(t, { color: 0xa7c4ff, ms: vfxMs(320), alpha: 0.22 }),
-          staggerMs: (VFX?.AOE_STAGGER_MS ?? 120)
-        });
-      } catch {}
+    // Cosmetic: caster -> all enemies (staggered)
+    try {
+      vfxCastToTargets?.(a, enemies, {
+        label: this.label,
+        proj: { ms: (VFX?.PROJ_MS ?? 750) * 0.80, color: 0xa7c4ff, radius: 6 },
+        onImpact: (t) => vfxFlashColor?.(t, { color: 0xa7c4ff, ms: vfxMs(320), alpha: 0.22 }),
+        staggerMs: (VFX?.AOE_STAGGER_MS ?? 120)
+      });
+    } catch {}
 
-      // Damage + stun roll per enemy
-      for (const t of enemies){
-        hit(a, t, { ability: this });
-        if (t.alive() && chance(this.stunChance)){
-          pushStatus(t, { key:'stun', dur: 1 });
-        }
-      }
-
-      // Heal allies (small)
-      for (const ally of friends){
-        const H = computeAbilityHeal(a, ally, this);
-        if (H > 0) applyHeal(a, ally, H, { abilityName: this.label });
-      }
-
-      appendLogHTML?.(`<span style="color:#a7c4ff">⚡ ${a.name} unleashes an Electrical Storm.</span>`);
+    // Damage + stun roll per enemy (suppress hit() travel/cue to avoid double VFX)
+    for (const t of enemies){
+      hit(a, t, { ability: this, noActCueVFX:true, noProjectileVFX:true });
+      if (t.alive() && chance(this.stunChance)) pushStatus(t, { key:'stun', dur: 1 });
     }
-  },
+
+    // Heal allies (use unified helper)
+    for (const ally of friends){
+      const H = computeAbilityHeal(a, ally, this);
+      if (H > 0) applyHealAmount(a, ally, H, { abilityName: this.label, showVFX: true });
+    }
+
+    appendLogHTML?.(`<span style="color:#a7c4ff">⚡ ${a.name} unleashes an Electrical Storm.</span>`);
+  }
+},
 
   /* 3) Chain Lightning (normal) — massive hit, 50% bounce, no repeats
      - projectile travels FROM last target TO next target (chain feel)
@@ -940,32 +940,23 @@ case 'Shinobi': return [
     pct: 0.15,
 
     use: function(a, t){
-      if (!t || !t.alive()) return;
+  if (!t || !t.alive()) return;
 
-      vfxActCue?.(a, this.label);
+  vfxActCue?.(a, this.label);
 
-      // Travel cue
-      vfxProjectile?.(a, t, { ms: 260, color: 0xff4d4d, radius: 4 });
+  const r = hit(a, t, { ability: this }); // <-- capture
+  if (!t.alive()) return;
 
-      hit(a, t, { ability: this });
-      if (!t.alive()) return;
+  // If dodged OR dealt no damage, do NOT apply bleed
+  if (r?.dodged || (r?.dealt|0) <= 0) return;
 
-      const dur = 3;
-      removeStatusKey(t, 'bleed');
-      pushStatus(t, { key:'bleed', dur, data:{ pct:this.pct, src:a?.name } });
+  const dur = 3;
+  removeStatusKey(t, 'bleed');
+  pushStatus(t, { key:'bleed', dur, data:{ pct:this.pct ?? 0.15, src:a?.name } });
 
-      // Impact cue (delayed)
-      const scene = getScene?.();
-      const impactDelay = Math.max(0, Math.floor(vfxMs(260) * 0.90));
-      const doImpact = () => {
-        vfxFlashColor?.(t, { color: 0xff4d4d, ms: vfxMs(260), alpha: 0.22 });
-        vfxFloatText?.(t, `BLEED ${dur}`, { ms: vfxMs(1800), fontSize: Math.floor(vfxScale(14)), color: '#ff7a7a' });
-      };
-      if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doImpact);
-      else doImpact();
+  appendLogHTML?.(`<span style="color:#ff7a7a">🩸 ${t.name} is bleeding (${dur}).</span>`);
+}
 
-      appendLogHTML?.(`<span style="color:#ff7a7a">🩸 ${t.name} is bleeding (${dur}).</span>`);
-    }
   },
 
   /* 5) Potion of Regeneration (fast) — 3 uses; heal %; cure poison */
@@ -1010,73 +1001,39 @@ case 'Shinobi': return [
     }
   },
 
-  /* 6) Dispel (fast) — enemy */
-  {
-    label: 'Dispel',
-    desc: 'Remove all effects except poison/bleed from an enemy.',
-    speed: 'fast', type: 'mag', target: 'enemy',
+ {
+  label: 'Dispel',
+  desc: 'Remove all effects except poison/bleed from any target.',
+  speed: 'normal', type: 'mag', target: 'any',
 
-    use: function(a, t){
-      if (!t) return;
+  use: function(a, t){
+    if (!t) return;
 
-      const keep = new Set(['poison','bleed']);
-      const before = (t.status || []).length;
-      t.status = (t.status || []).filter(s => keep.has(s.key));
-      const removed = before - t.status.length;
+    const keep = new Set(['poison','bleed']);
+    const before = (t.status || []).length;
+    t.status = (t.status || []).filter(s => keep.has(s.key));
+    const removed = before - t.status.length;
 
-      t._refresh && t._refresh();
-      updateStatusView?.(t);
+    t._refresh && t._refresh();
+    updateStatusView?.(t);
 
-      vfxActCue?.(a, 'Dispel');
-      vfxProjectile?.(a, t, { ms: 320, color: 0xa7c4ff, radius: 5 });
+    // VFX
+    vfxActCue?.(a, 'Dispel');
+    vfxProjectile?.(a, t, { ms: 320, color: 0xa7c4ff, radius: 5 });
 
-      const scene = getScene?.();
-      const impactDelay = Math.max(0, Math.floor(vfxMs(320) * 0.90));
-      const doImpact = () => {
-        vfxFlashColor?.(t, { color: 0xa7c4ff, ms: vfxMs(300), alpha: 0.20 });
-        vfxFloatText?.(t, `DISPEL`, { ms: vfxMs(1100), fontSize: Math.floor(vfxScale(14)), color: '#a7c4ff' });
-      };
-      if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doImpact);
-      else doImpact();
+    const scene = getScene?.();
+    const impactDelay = Math.max(0, Math.floor(vfxMs(320) * 0.90));
+    const doImpact = () => {
+      vfxFlashColor?.(t, { color: 0xa7c4ff, ms: vfxMs(300), alpha: 0.20 });
+      vfxFloatText?.(t, `DISPEL`, { ms: vfxMs(1100), fontSize: Math.floor(vfxScale(14)), color: '#a7c4ff' });
+    };
+    if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doImpact);
+    else doImpact();
 
-      if (removed > 0) appendLogHTML?.(`<span style="color:#a7c4ff">✨ ${a.name} dispels ${t.name} (${removed} effects removed).</span>`);
-      else            appendLogHTML?.(`<span style="color:#a7c4ff">✨ ${a.name} dispels ${t.name}, but nothing happens.</span>`);
-    }
-  },
-
-  /* 6b) Dispel (fast) — ally */
-  {
-    label: 'Dispel (Ally)',
-    desc: 'Remove all effects except poison/bleed from an ally.',
-    speed: 'fast', type: 'mag', target: 'ally',
-
-    use: function(a, t){
-      if (!t) return;
-
-      const keep = new Set(['poison','bleed']);
-      const before = (t.status || []).length;
-      t.status = (t.status || []).filter(s => keep.has(s.key));
-      const removed = before - t.status.length;
-
-      t._refresh && t._refresh();
-      updateStatusView?.(t);
-
-      vfxActCue?.(a, 'Dispel');
-      vfxProjectile?.(a, t, { ms: 320, color: 0xa7c4ff, radius: 5 });
-
-      const scene = getScene?.();
-      const impactDelay = Math.max(0, Math.floor(vfxMs(320) * 0.90));
-      const doImpact = () => {
-        vfxFlashColor?.(t, { color: 0xa7c4ff, ms: vfxMs(300), alpha: 0.20 });
-        vfxFloatText?.(t, `DISPEL`, { ms: vfxMs(1100), fontSize: Math.floor(vfxScale(14)), color: '#a7c4ff' });
-      };
-      if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doImpact);
-      else doImpact();
-
-      if (removed > 0) appendLogHTML?.(`<span style="color:#a7c4ff">✨ ${a.name} dispels ${t.name} (${removed} effects removed).</span>`);
-      else            appendLogHTML?.(`<span style="color:#a7c4ff">✨ ${a.name} dispels ${t.name}, but nothing happens.</span>`);
-    }
-  },
+    if (removed > 0) appendLogHTML?.(`<span style="color:#a7c4ff">✨ ${a.name} dispels ${t.name} (${removed} effects removed).</span>`);
+    else             appendLogHTML?.(`<span style="color:#a7c4ff">✨ ${a.name} dispels ${t.name}, but nothing happens.</span>`);
+  }
+},
 
 ];
 
@@ -2572,10 +2529,15 @@ function applyHeal(caster, target, amount, { abilityName='Heal' } = {}){
 function vfxHealImpact(caster, target, healed, label='Heal'){
   if (!target || healed <= 0) return;
 
-  // show WHO cast (optional but improves clarity)
   if (caster) vfxActCue?.(caster, label);
 
-  // show heal on target
+  // NEW: travel caster -> target (if caster exists and differs)
+  try {
+    if (caster && caster !== target && typeof vfxProjectile === 'function'){
+      vfxProjectile(caster, target, { ms: vfxMs(360), color: 0xa7ffb5, radius: 6 });
+    }
+  } catch {}
+
   vfxFlashColor?.(target, { color: 0xa7ffb5, ms: vfxMs(450), alpha: 0.18 });
   vfxFloatText?.(target, `+${healed}`, { ms: vfxMs(VFX?.FLOAT_MS ?? 1500), fontSize: Math.floor(vfxScale(22)) });
 }
@@ -2944,75 +2906,78 @@ function endRoundTick(){
   for (const u of all){
     if (!u.alive()) continue;
 
-    // Poison ticks
+    // 1) Poison ticks
     const p = u.status.find(s => s.key === 'poison');
     if (p && Array.isArray(p.data?.contributions) && p.data.contributions.length){
       const current = p.data.contributions.reduce((s,c)=>s+(c.amt||0),0);
       if (current > 0){
-        const dealt = Math.floor(current * (CONFIG.DAMAGE_GLOBAL||1));
+        const poisonDealt = Math.floor(current * (CONFIG.DAMAGE_GLOBAL||1));
 
-        const beforeHP = u.hp;                 // <-- NEW
-        u.hp = clamp(u.hp - dealt, 0, u.maxHP);
-if (typeof syncDeathState === 'function') syncDeathState(u);
+        const beforeHP = u.hp;
+        u.hp = clamp(u.hp - poisonDealt, 0, u.maxHP);
+        syncDeathState?.(u);
 
-// Bleed ticks (end of round) — NOT shrug-able
-const b = u.status.find(s => s.key === 'bleed');
-if (b){
-  const pct = b.data?.pct ?? 0.15;
-  const dealt = Math.max(1, Math.floor(u.hp * pct * (CONFIG.DAMAGE_GLOBAL || 1)));
-
-  const beforeHP = u.hp;
-  u.hp = clamp(u.hp - dealt, 0, u.maxHP);
-  if (typeof syncDeathState === 'function') syncDeathState(u);
-
-  // VFX (you can make a dedicated one later)
-  try {
-    vfxFlashColor?.(u, { color: 0xff4d4d, ms: vfxMs(260), alpha: 0.26 });
-    vfxFloatText?.(u, `-${dealt} 🩸`, { ms: vfxMs(2000), fontSize: Math.floor(vfxScale(24)), color: '#ff7a7a' });
-  } catch {}
-
-  appendLogHTML?.(`<span style="color:#ff7a7a">🩸 ${u.name} takes ${dealt} bleed damage.</span>`);
-  u._refresh && u._refresh(); checkHPWarnings(u);
-
-  if (beforeHP > 0 && u.hp <= 0 && !u._deadLogged){
-    u._deadLogged = true;
-    appendLogHTML(`☠ ${u.name} is down!`);
-    // optional: remove bleed so it doesn’t try to tick
-    removeStatusKey(u,'bleed');
-    updateStatusView(u);
-    continue;
-  }
-}
-
-vfxPoisonTick(u, dealt);
+        vfxPoisonTick(u, poisonDealt);
 
         p.data.contributions = p.data.contributions
           .map(c => ({ amt: Math.floor(c.amt * 0.85) }))
           .filter(c => c.amt >= 1);
 
         const totalLeft = p.data.contributions.reduce((s,c)=>s + c.amt, 0);
-        logGreen(`${u.name} takes ${dealt} poison damage (${totalLeft} total).`);
-        u._refresh && u._refresh(); checkHPWarnings(u);
+        logGreen(`${u.name} takes ${poisonDealt} poison damage (${totalLeft} total).`);
+        u._refresh && u._refresh();
+        checkHPWarnings?.(u);
 
-        // --- NEW: death announce if poison killed them ---
         if (beforeHP > 0 && u.hp <= 0 && !u._deadLogged){
           u._deadLogged = true;
           appendLogHTML(`☠ ${u.name} is down!`);
-          // Optional: clear poison immediately so it doesn't try to tick again
           removeStatusKey(u,'poison');
           updateStatusView(u);
-          continue; // stop processing durations/shrugs for a dead unit
+          continue;
         }
 
         if (p.data.contributions.length === 0) removeStatusKey(u,'poison');
       }
     }
 
-    // Decrement durations (except poison)
-    for (const st of u.status){ if (st.key !== 'poison') st.dur--; }
-    u.status = u.status.filter(s=>s.dur > 0);
+    // 2) Bleed ticks (end of round) — NOT shrug-able
+    const b = u.status.find(s => s.key === 'bleed');
+    if (b && (b.dur|0) > 0){
+      const pct = Number.isFinite(b.data?.pct) ? b.data.pct : 0.15;
+      const bleedDealt = Math.max(1, Math.floor(u.hp * pct * (CONFIG.DAMAGE_GLOBAL || 1)));
 
-    // Shrug checks in fixed order
+      const beforeHP = u.hp;
+      u.hp = clamp(u.hp - bleedDealt, 0, u.maxHP);
+      syncDeathState?.(u);
+
+      vfxFlashColor?.(u, { color: 0xff4d4d, ms: vfxMs(260), alpha: 0.26 });
+      vfxFloatText?.(u, `-${bleedDealt} BLEED`, {
+        ms: vfxMs(1600),
+        fontSize: Math.floor(vfxScale(16)),
+        color: '#ff7a7a'
+      });
+
+      appendLogHTML?.(`<span style="color:#ff7a7a">🩸 ${u.name} takes ${bleedDealt} bleed damage.</span>`);
+
+      u._refresh && u._refresh();
+      checkHPWarnings?.(u);
+
+      if (beforeHP > 0 && u.hp <= 0 && !u._deadLogged){
+        u._deadLogged = true;
+        appendLogHTML(`☠ ${u.name} is down!`);
+        removeStatusKey(u,'bleed');
+        updateStatusView(u);
+        continue;
+      }
+    }
+
+    // 3) Decrement durations (except poison)
+    for (const st of u.status){
+      if (st.key !== 'poison') st.dur--;
+    }
+    u.status = u.status.filter(s => s.dur > 0);
+
+    // 4) Shrug checks (bleed intentionally NOT included)
     if (hasStatus(u,'poison'))   tryShrug(u,'poison');
     if (hasStatus(u,'stun'))     tryShrug(u,'stun');
     if (hasStatus(u,'blind'))    tryShrug(u,'blind');
@@ -3404,26 +3369,36 @@ let _pendingTargetPick = false;
 let _pendingAbilityTarget = null;
 
 function updateTopBarForCurrentSelection(){
-    // If we’re in the lobby, force the title (no round text)
+  // If we’re in the lobby, force the title (no round text)
   if (PVP && PVP.phase === 'idle'){
     setTopBarLobby();
     return;
   }
-const actor = currentActor();
-  if (!actor){ topLeftEl.textContent = `Round ${roundNumber} — Waiting…`; return; }
+
+  const actor = currentActor();
+  if (!actor){
+    topLeftEl.textContent = `Round ${roundNumber} — Waiting…`;
+    return;
+  }
 
   if (_pendingTargetPick && _pendingAbility){
-  const tgtWord = _pendingAbilityTarget==='ally' ? 'an ally' : 'an enemy';
-  const abLabel = _pendingAbility.label || 'ability';
+    const tgtWord =
+      _pendingAbilityTarget === 'ally'  ? 'an ally'  :
+      _pendingAbilityTarget === 'enemy' ? 'an enemy' :
+      'a target';
 
-  // Optional hint so players learn invisibility rules quickly
-  topLeftEl.textContent = `Round ${roundNumber} — Select ${tgtWord} for ${actor.name}'s ${abLabel} (invisible targets can’t be selected)`;
-  return;
-}
+    const abLabel = _pendingAbility.label || 'ability';
 
+    topLeftEl.textContent =
+      `Round ${roundNumber} — Select ${tgtWord} for ${actor.name}'s ${abLabel}`;
+    return;
+  }
 
   const ta = actor.status?.find(s=>s.key==='taunt' && s.dur>0 && s.data?.taunter?.alive());
-  if (ta){ topLeftEl.textContent = `Round ${roundNumber} — ${actor.name} is taunted: must Attack ${ta.data.taunter.name}`; return; }
+  if (ta){
+    topLeftEl.textContent = `Round ${roundNumber} — ${actor.name} is taunted: must Attack ${ta.data.taunter.name}`;
+    return;
+  }
 
   topLeftEl.textContent = `Round ${roundNumber} — Choose action for ${actor.name}`;
 }
@@ -3658,7 +3633,7 @@ if (PVP && PVP.phase === 'battle' && PVP.waitingForOpp) {
 
   btn.onclick = () => {
     _pendingAbility = ability;
-    if (ability.target === 'enemy' || ability.target === 'ally') {
+    if (ability.target === 'enemy' || ability.target === 'ally' || ability.target === 'any') {
       _pendingTargetPick = true;
       _pendingAbilityTarget = ability.target;
     } else {
@@ -3676,25 +3651,15 @@ if (PVP && PVP.phase === 'battle' && PVP.waitingForOpp) {
   const attack=raw.find(isAttack); const others=raw.filter(a=>!isAttack(a));
   const rank={fast:0,normal:1,slow:2}; others.sort((a,b)=>(rank[a.speed]??1)-(rank[b.speed]??1)||(a.label||'').localeCompare(b.label||''));
 
-  const picks=[]; if(attack) picks.push(attack); for(const ab of others){ if(picks.length>=5) break; picks.push(ab); }
-  for (let i=0;i<5;i++){ const node=picks[i]?makeButton(picks[i]):(()=>{const ph=document.createElement('button'); ph.className='action-btn placeholder'; ph.disabled=true; ph.innerHTML=`<div class="label">Empty</div>`; return ph;})(); actionButtonsEl.appendChild(node); }
-
-  const guardAbility = {
-  label:'Guard',
-  desc:'Reduce damage taken this round.',
-  speed:'fast',            // <-- gives it 3 dots
-  type:'phys',
-  target:'self',
-  isGuard:true,
-  use:(a)=>{
-    const pct = (window.GUARD_REDUCTION ?? 0.5);
-    pushStatus(a, { key:'guard', dur:1, data:{ pct } });
-    appendLog(`${a.name} braces behind their guard.`);
-  }
-};
-const guardBtn = makeButton(guardAbility);
-actionButtonsEl.appendChild(guardBtn);
-
+  const picks=[];
+if(attack) picks.push(attack);
+for(const ab of others){
+  if(picks.length>=6) break;
+  picks.push(ab);
+}
+for (let i=0;i<6;i++){
+  const node = picks[i] ? makeButton(picks[i]) : (() => { ...placeholder... })();
+  actionButtonsEl.appendChild(node);
 }
 
 /* ---------- confirm (SP version) ---------- */
@@ -3713,23 +3678,23 @@ _pendingAbility = null;
   if ((_pendingAbility.target==='enemy'||_pendingAbility.target==='ally')) {
   const allowDead = !!_pendingAbility.allowDeadTarget;
   
-if (_pendingTargetPick && _pendingAbility && target && hasStatus(target,'invisible')) {
-  appendLog(`${target.name} is invisible and can't be targeted.`);
-  vfxFloatText?.(target, 'INVISIBLE', { ms: vfxMs(1250), fontSize: Math.floor(vfxScale(14)), color: '#bdbdff' });
+if ((_pendingAbility.target==='enemy'||_pendingAbility.target==='ally'||_pendingAbility.target==='any')) {
+  const allowDead = !!_pendingAbility.allowDeadTarget;
 
-  // keep selection active
-  _pendingTargetPick = true;
-  updateTopBarForCurrentSelection();
-  return;
-}
+  if (_pendingTargetPick && _pendingAbility && target && hasStatus(target,'invisible')) {
+    appendLog(`${target.name} is invisible and can't be targeted.`);
+    vfxFloatText?.(target, 'INVISIBLE', { ms: vfxMs(1250), fontSize: Math.floor(vfxScale(14)), color: '#bdbdff' });
+    return;
+  }
 
-if (!target || (!target.alive() && !allowDead)) {
-    appendLog('No valid target.'); 
-    _pendingTargetPick = true; 
-    updateTopBarForCurrentSelection(); 
+  if (!target || (!target.alive() && !allowDead)) {
+    appendLog('No valid target.');
+    _pendingTargetPick = true;
+    updateTopBarForCurrentSelection();
     return;
   }
 }
+
 
   const ta=actor.status.find(s=>s.key==='taunt'&&s.dur>0&&s.data?.taunter?.alive?.());
   if (ta){ const isBasic=a=>a&&(a.isBasic||(a.label&&a.label.toLowerCase()==='attack')); const basic=abilitiesFor(actor).find(isBasic);
@@ -4832,21 +4797,6 @@ function mountDraftUI(){
   if (box){ box.textContent=''; const hint=document.createElement('div'); hint.style.cssText='font-size:12px;opacity:.85;text-align:center;padding:8px;'; hint.textContent='Draft in progress…'; box.appendChild(hint); }
   updateDraftUI();
 }
-
-// One-liners shown during draft (fallbacks handled below)
-const JOB_TAGLINES = {
-  Warrior: "A frontline bruiser with hard hits, taunts, and tough skin.",
-  Rogue: "Speed manipulation and poison attacks to pick opponents apart.",
-  Monk: "Melee combos and cleansing abilities.",
-  Cleric: "The ultimate healer to keep allies standing under fire.",
-  Paladin: "Versatile fighter with Holy magic.",
-  Archer: "Expose vulnerabilities and rain arrows on your enemies.",
-  Mage: "A powerful magician who has mastered the elements.",
-  Mystic: "Play mind games and control your opponents.",
-  Necromancer: "Master of the Dark arts.",
-  Barbarian: "Unparalleled raw damage and snowball ability.",
-};
-
 
 function updateDraftUI(){
   // --- turn chip (now driven by DRAFT_ORDER + pickCount) ---

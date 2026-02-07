@@ -3810,77 +3810,124 @@ function renderActionBarForCurrent(){
   }
 }
 
-
-/* ---------- confirm (SP version) ---------- */
 async function confirmChoice(target){
-  const actor=currentActor(); if(!actor) return;
+  const actor = currentActor(); 
+  if (!actor) return;
+
   if (!actor.alive()){
-    appendLog(`${actor.name} is defeated and cannot act.`); _pendingAbility=null;
-_pendingTargetPick = false;
-_pendingAbilityTarget = null;
-_pendingAbility = null;
-    const alive=player.filter(u=>u.alive()); selectingIndex=Math.min(selectingIndex+1, alive.length);
-    updateTopBarForCurrentSelection(); renderActionBarForCurrent(); return;
-  }
-  if (!_pendingAbility){ appendLog('Choose an ability first.'); return; }
+    appendLog(`${actor.name} is defeated and cannot act.`);
+    _pendingTargetPick = false;
+    _pendingAbilityTarget = null;
+    _pendingAbility = null;
 
-  // Target validity (permit dead ally if ability allows it, e.g. Resurrection)
-if (_pendingAbility.target === 'enemy' || _pendingAbility.target === 'ally' || _pendingAbility.target === 'any') {
-  const allowDead = !!_pendingAbility.allowDeadTarget;
-
-  // Invisibility blocks direct targeting
-  if (_pendingTargetPick && target && hasStatus(target,'invisible')) {
-    appendLog(`${target.name} is invisible and can't be targeted.`);
-    vfxFloatText?.(target, 'INVISIBLE', {
-      ms: vfxMs(1250),
-      fontSize: Math.floor(vfxScale(14)),
-      color: '#bdbdff'
-    });
+    const alive = player.filter(u=>u.alive());
+    selectingIndex = Math.min(selectingIndex + 1, alive.length);
+    updateTopBarForCurrentSelection(); 
+    renderActionBarForCurrent(); 
     return;
   }
 
-  if (!target || (!target.alive() && !allowDead)) {
-    appendLog('No valid target.');
-    _pendingTargetPick = true;
-    updateTopBarForCurrentSelection();
+  if (!_pendingAbility){
+    appendLog('Choose an ability first.');
     return;
   }
-}
 
-  const ta=actor.status.find(s=>s.key==='taunt'&&s.dur>0&&s.data?.taunter?.alive?.());
-  if (ta){ const isBasic=a=>a&&(a.isBasic||(a.label&&a.label.toLowerCase()==='attack')); const basic=abilitiesFor(actor).find(isBasic);
-    if (basic && ta.data.taunter.alive()){ appendLog(`${actor.name} is taunted and must attack ${ta.data.taunter.name}!`);
-      _pendingAbility=basic; _pendingTargetPick=false; _pendingAbilityTarget=null; target=ta.data.taunter; } }
+  /* =========================
+     TARGET VALIDITY (FIX HERE)
+     ========================= */
+  if (['enemy','ally','any'].includes(_pendingAbility.target)) {
+    const ab = _pendingAbility;
+    const allowDead = !!ab.allowDeadTarget;
 
-  const ability=_pendingAbility; _pendingAbility=null;
+    // If you got here, this ability expects a target object
+    if (!target){
+      appendLog('No valid target.');
+      _pendingTargetPick = true;
+      updateTopBarForCurrentSelection();
+      return;
+    }
+
+    // Invisibility blocks ALL direct targeting (enemy/ally/any)
+    if (hasStatus(target,'invisible')){
+      appendLog(`${target.name} is invisible and can't be targeted.`);
+      vfxFloatText?.(target, 'INVISIBLE', {
+        ms: (typeof vfxMs==='function' ? vfxMs(1250) : 1250),
+        fontSize: Math.floor((typeof vfxScale==='function' ? vfxScale(14) : 14)),
+        color: '#bdbdff'
+      });
+      return;
+    }
+
+    // OPTIONAL: Shift blocks PHYSICAL direct-target abilities
+    if (hasStatus(target,'shift') && ab.type === 'phys'){
+      appendLog(`${target.name} is Shifted and can't be targeted by physical attacks.`);
+      vfxFloatText?.(target, 'SHIFT', {
+        ms: (typeof vfxMs==='function' ? vfxMs(1000) : 1000),
+        fontSize: Math.floor((typeof vfxScale==='function' ? vfxScale(14) : 14)),
+        color: '#a7c4ff'
+      });
+      return;
+    }
+
+    // Dead target rules
+    if (!target.alive?.() && !allowDead){
+      appendLog('No valid target.');
+      _pendingTargetPick = true;
+      updateTopBarForCurrentSelection();
+      return;
+    }
+  }
+  /* ======== END FIX ======== */
+
+  const ta = actor.status.find(s=>s.key==='taunt'&&s.dur>0&&s.data?.taunter?.alive?.());
+  if (ta){
+    const isBasic = a=>a&&(a.isBasic||(a.label&&a.label.toLowerCase()==='attack'));
+    const basic = abilitiesFor(actor).find(isBasic);
+    if (basic && ta.data.taunter.alive()){
+      appendLog(`${actor.name} is taunted and must attack ${ta.data.taunter.name}!`);
+      _pendingAbility = basic;
+      _pendingTargetPick = false;
+      _pendingAbilityTarget = null;
+      target = ta.data.taunter;
+    }
+  }
+
+  const ability = _pendingAbility;
+  _pendingAbility = null;
+
   if (ability?.label === 'Dispel') {
-  console.log('[DBG] queued Dispel', {
-    actor: actor?.name,
-    target: target?.name,
-    targetAlive: !!target?.alive?.(),
-    pendingTargetPick: _pendingTargetPick,
-    pendingAbilityTarget: _pendingAbilityTarget
-  });
-}
+    console.log('[DBG] queued Dispel', {
+      actor: actor?.name,
+      target: target?.name,
+      targetAlive: !!target?.alive?.(),
+      pendingTargetPick: _pendingTargetPick,
+      pendingAbilityTarget: _pendingAbilityTarget
+    });
+  }
 
-playerChoices.push({ actor, ability, target });
+  playerChoices.push({ actor, ability, target });
 
-  const alive=player.filter(u=>u.alive()); selectingIndex++;
+  const alive = player.filter(u=>u.alive());
+  selectingIndex++;
 
-_pendingTargetPick = false;
-_pendingAbilityTarget = null;
-_pendingAbility = null;
+  _pendingTargetPick = false;
+  _pendingAbilityTarget = null;
+  _pendingAbility = null;
 
   if (selectingIndex >= alive.length){
     sendMyRoundChoices();
-    if (Array.isArray(PVP.roundBuf.opp[roundNumber])){ tryResolveRoundWithBothSides(roundNumber); }
+    if (Array.isArray(PVP.roundBuf.opp[roundNumber])){ 
+      tryResolveRoundWithBothSides(roundNumber); 
+    }
     if (typeof showRightWaitHint==='function') showRightWaitHint();
-    if (topLeftEl) topLeftEl.textContent=`Round ${roundNumber} — Waiting for opponent…`;
+    if (topLeftEl) topLeftEl.textContent = `Round ${roundNumber} — Waiting for opponent…`;
     return;
   }
 
-  updateTopBarForCurrentSelection(); renderActionBarForCurrent();
+  updateTopBarForCurrentSelection(); 
+  renderActionBarForCurrent();
 }
+
 
 /* ---------- Phaser Scene ---------- */
 let game = null;

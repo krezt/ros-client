@@ -405,6 +405,16 @@ function __setType(type, labels){
   const O = window.ABILITY_TYPE_OVERRIDES;
   for (const name of labels) { if (name) O[name] = type; }
 }
+
+function safeVfxMs(ms){
+  try { return (typeof vfxMs === 'function') ? vfxMs(ms) : ms; }
+  catch { return ms; }
+}
+function safeVfxScale(px){
+  try { return (typeof vfxScale === 'function') ? vfxScale(px) : px; }
+  catch { return px; }
+}
+
 // Helper: set a label and its common variants (proc / dot / tick)
 function __setWithVariants(type, label, {proc=true, dot=false, tick=false} = {}){
   const names = [label];
@@ -682,11 +692,11 @@ case 'Electromancer': return [
   */
   {
   label: 'Chain Lightning',
-  desc: 'Massive damage. 50% chance to jump to a new random target (any team), repeating.',
+  desc: 'Massive damage. 60% chance to jump to a new random target (any team), repeating.',
   speed: 'normal', type: 'mag', target: 'enemy',
 
-  base: { min: 45, max: 75 }, statCoef: 0.65,
-  bounceChance: 0.50,
+  base: { min: 75, max: 115 }, statCoef: 0.65,
+  bounceChance: 0.60,
 
   use: async function(a, first){
     if (!first || !first.alive()) return;
@@ -791,7 +801,7 @@ const removed = beforeN - a.status.length;
     }
   },
 
-  /* 5) Shift (normal) — dodge ALL physical attacks for 2 rounds
+  /* 5) Shift (normal) — dodge ALL physical attacks for 3 rounds
      Requires: tryDodge() patch => if hasStatus(defender,'shift') return true;
   */
   {
@@ -800,7 +810,7 @@ const removed = beforeN - a.status.length;
     speed: 'normal', type: 'mag', target: 'self',
 
     use: function(a){
-      const dur = 2;
+      const dur = 3;
       removeStatusKey(a, 'shift');
       pushStatus(a, { key:'shift', dur });
 
@@ -851,9 +861,9 @@ case 'Shinobi': return [
     label: 'Attack',
     desc: 'Fast strike. Chance to double strike.',
     speed: 'fast', type: 'phys', target: 'enemy',
-    base: { min: 28, max: 44 }, statCoef: 0.45, isBasic: true,
+    base: { min: 24, max: 44 }, statCoef: 0.45, isBasic: true,
 
-    procChance: 0.33,
+    procChance: 0.50,
 
     use: function(a, t){
       if (!t || !t.alive()) return;
@@ -901,7 +911,7 @@ case 'Shinobi': return [
     desc:'Gain an additional basic attack for the next 3 rounds.',
     speed:'slow', type:'mag', target:'self',
     use:function(a){
-      const dur = 3;
+      const dur = 4;
       removeStatusKey(a,'shinobi_haste');
       pushStatus(a,{key:'shinobi_haste', dur});
 
@@ -959,14 +969,14 @@ case 'Shinobi': return [
 
   },
 
-  /* 5) Potion of Regeneration (fast) — 3 uses; heal %; cure poison */
+  /* 5) Potion of Regeneration (fast) — 2 uses; heal %; cure poison */
   {
     label: 'Potion of Regeneration',
-    desc: 'Heal 25–35% max HP and cure poison (3 uses).',
+    desc: 'Heal 25–35% max HP and cure poison (2 uses).',
     speed: 'fast', type: 'mag', target: 'self',
-    usesMax: 3,
-    pctMin: 0.25,
-    pctMax: 0.35,
+    usesMax: 2,
+    pctMin: 0.30,
+    pctMax: 0.40,
 
     use: function(a){
       if (!a) return;
@@ -1001,39 +1011,49 @@ case 'Shinobi': return [
     }
   },
 
- {
+{
   label: 'Dispel',
-  desc: 'Remove all effects except poison/bleed from any target.',
-  speed: 'normal', type: 'mag', target: 'any',
+  desc: 'Remove all effects except poison/bleed.',
+  speed: 'fast', type: 'mag', target: 'any',
 
   use: function(a, t){
     if (!t) return;
 
     const keep = new Set(['poison','bleed']);
     const before = (t.status || []).length;
+
     t.status = (t.status || []).filter(s => keep.has(s.key));
     const removed = before - t.status.length;
 
     t._refresh && t._refresh();
     updateStatusView?.(t);
 
-    // VFX
-    vfxActCue?.(a, 'Dispel');
-    vfxProjectile?.(a, t, { ms: 320, color: 0xa7c4ff, radius: 5 });
+    // VFX (safe)
+    try {
+      vfxCastToTargets?.(a, [t], {
+        label: this.label,
+        proj: { ms: (VFX?.PROJ_MS ?? 750), color: 0xa7c4ff, radius: 6 },
+        onImpact: (u) => {
+          vfxFlashColor?.(u, { color: 0xa7c4ff, ms: safeVfxMs(300), alpha: 0.20 });
+          vfxFloatText?.(u, `DISPEL`, {
+            ms: safeVfxMs(1100),
+            fontSize: Math.floor(safeVfxScale(16)),
+            color: '#a7c4ff'
+          });
+        }
+      });
+    } catch {}
 
-    const scene = getScene?.();
-    const impactDelay = Math.max(0, Math.floor(vfxMs(320) * 0.90));
-    const doImpact = () => {
-      vfxFlashColor?.(t, { color: 0xa7c4ff, ms: vfxMs(300), alpha: 0.20 });
-      vfxFloatText?.(t, `DISPEL`, { ms: vfxMs(1100), fontSize: Math.floor(vfxScale(14)), color: '#a7c4ff' });
-    };
-    if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doImpact);
-    else doImpact();
+    // Log (never optional-chain away your only log)
+    const msg = (removed > 0)
+      ? `✨ ${a.name} dispels ${t.name} (${removed} effects removed).`
+      : `✨ ${a.name} dispels ${t.name}, but nothing happens.`;
 
-    if (removed > 0) appendLogHTML?.(`<span style="color:#a7c4ff">✨ ${a.name} dispels ${t.name} (${removed} effects removed).</span>`);
-    else             appendLogHTML?.(`<span style="color:#a7c4ff">✨ ${a.name} dispels ${t.name}, but nothing happens.</span>`);
+    if (typeof appendLogHTML === 'function') appendLogHTML(`<span style="color:#a7c4ff">${msg}</span>`);
+    else appendLog?.(msg);
   }
 },
+
 
 ];
 
@@ -1041,7 +1061,7 @@ case 'Shinobi': return [
     /* ===== Warrior ===== */
 case 'Warrior': return [
   {label:'Attack', desc:'Good old sword and board.', speed:'normal', type:'phys', target:'enemy',
-   base:{min:45,max:75}, statCoef:0.35, isBasic:true,
+   base:{min:55,max:75}, statCoef:0.35, isBasic:true,
    use:function(a,t){ return hit(a,t,{ability:this}); } },
 
 {
@@ -1093,7 +1113,7 @@ case 'Warrior': return [
 
 
   {label:'Power Strike', desc:'Slow, potentially heavy blow.', speed:'slow', type:'phys', target:'enemy',
-   base:{min:60,max:120}, statCoef:0.60,
+   base:{min:75,max:120}, statCoef:0.60,
    use:function(a,t){ return hit(a,t,{ability:this}); } },
 
   {label:'Insult', desc:'Taunt an enemy into attacking you.', speed:'normal', type:'phys', target:'enemy',
@@ -1112,7 +1132,7 @@ case 'Warrior': return [
   {label:'Shieldwall', desc:'Allies gain mitigation; intercept first hit.', speed:'fast', type:'phys', target:'all-allies',
    use:(a,arr)=>{
      for (const ally of arr){
-       pushStatus(ally, { key:'guard', dur:1, data:{ pct:(CONFIG.SHIELDWALL_GUARD||0.15) }});
+       pushStatus(ally, { key:'guard', dur:1, data:{ pct:(CONFIG.SHIELDWALL_GUARD||0.20) }});
      }
      pushStatus(a, { key:'shield_redirect', dur:1, data:{ remaining:1 }});
      appendLogHTML(`${a.name} raises <b>Shieldwall</b> to protect the team!`);
@@ -1127,7 +1147,7 @@ case 'Warrior': return [
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Rend', desc:'Expose your target’s weakness.', speed:'slow', type:'phys', target:'enemy',
-       base:{min:60,max:100}, statCoef:0.35,
+       base:{min:60,max:120}, statCoef:0.35,
        use:function(a,t){ const r=hit(a,t,{ability:this});
          if(t.alive()){ const dur=buffDurBySDM(a); pushStatus(t,{key:'def_down', dur}); appendLog(`${t.name}’s defense is lowered (${dur}).`);} return r; } },
 
@@ -1138,7 +1158,7 @@ case 'Warrior': return [
          appendLog(`All enemies’ defense is reduced (${dur}).`); } },
 
      {label:'Smash', desc:'Crushing blow with chance to stun.', speed:'slow', type:'phys', target:'enemy',
- base:{min:50,max:100}, statCoef:0.55,
+ base:{min:60,max:110}, statCoef:0.55,
  use:function(a,t){
    const r=hit(a,t,{ability:this});
    if(t.alive() && rand()<0.25){
@@ -1149,7 +1169,7 @@ case 'Warrior': return [
  }},
 
       {label:'Rampage', desc:'Swing that grants rampage on killshot.', speed:'normal', type:'phys', target:'enemy',
-       base:{min:50,max:110}, statCoef:0.45,
+       base:{min:75,max:110}, statCoef:0.45,
        use:function(a,t){
          const hpBefore = t.hp;
          const r = hit(a,t,{ability:this});
@@ -1169,11 +1189,11 @@ case 'Warrior': return [
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Attack', desc:'Hard slice at your enemy.', speed:'fast', type:'phys', target:'enemy',
-       base:{min:30,max:70}, statCoef:0.45, isBasic:true,
+       base:{min:35,max:70}, statCoef:0.45, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Poison Dagger', desc:'Cover your blade with poison for this attack.', speed:'normal', type:'phys', target:'enemy',
-       base:{min:25,max:45}, statCoef:0.30,
+       base:{min:30,max:55}, statCoef:0.30,
        use:function(a,t){
          const r = hit(a,t,{ability:this});
          if (t.alive() && r.dealt > 0){
@@ -1184,7 +1204,7 @@ case 'Warrior': return [
        }},
 
       {label:'Shadowstep', desc:'Strike quickly and defend.', speed:'fast', type:'phys', target:'enemy',
-       base:{min:30,max:35}, statCoef:0.30,
+       base:{min:35,max:45}, statCoef:0.30,
        use:function(a,t){
          const r = hit(a,t,{ability:this});
          const dur = buffDurBySDM(a);
@@ -1370,7 +1390,7 @@ case 'Cleric': return [
     label: 'Piercing Light',
     desc: 'Holy bolt that pierces defense.',
     speed: 'slow', type: 'mag', target: 'enemy',
-    base: { min: 40, max: 70 }, statCoef: 0.55, defPen: 0.25,
+    base: { min: 45, max: 80 }, statCoef: 0.55, defPen: 0.25,
     use: function(a, t){ return hit(a, t, { ability: this }); }
   },
 
@@ -1446,11 +1466,11 @@ case 'Cleric': return [
          appendLog(`${a.name} is warded from harm and flows with powerful magic (${dur}).`);} },
 
       {label:'Attack', desc:'Basic attack with lightning dagger.', speed:'normal', type:'phys', target:'enemy',
-       base:{min:10,max:25}, statCoef:0.40, isBasic:true,
+       base:{min:15,max:30}, statCoef:0.40, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
      {label:'Meteor', desc:'Fast meteor strike with chance to stun.', speed:'fast', type:'mag', target:'enemy',
- base:{min:20,max:50}, statCoef:0.45,
+ base:{min:25,max:55}, statCoef:0.45,
  use:function(a,t){
    const r=hit(a,t,{ability:this});
    if(t.alive() && rand()<0.25){
@@ -1461,7 +1481,7 @@ case 'Cleric': return [
  }},
 
       {label:'Fireball', desc:'Large fireball that scorches all foes.', speed:'slow', type:'mag', target:'all-enemies',
-       base:{min:40,max:80}, statCoef:0.50, defPen:0.20,
+       base:{min:50,max:90}, statCoef:0.50, defPen:0.20,
        use:function(a,arr){ for(const t of arr){ if(!t.alive()) continue; hit(a,t,{ability:this}); } } },
 
       {label:'Arcane Echo', desc:'Your spells cast twice next turn.', speed:'normal', type:'mag', target:'self',
@@ -1471,14 +1491,14 @@ case 'Cleric': return [
     /* ===== Paladin ===== */
     case 'Paladin': return [
       {label:'Attack', desc:'Basic sword & board attack.', speed:'normal', type:'phys', target:'enemy',
-       base:{min:45,max:55}, statCoef:0.40, isBasic:true,
+       base:{min:50,max:55}, statCoef:0.40, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Shield Bash', desc:'Quick bash with a small chance to stun.', speed:'fast', type:'phys', target:'enemy',
- base:{min:20,max:40}, statCoef:0.35,
+ base:{min:25,max:45}, statCoef:0.35,
  use:function(a,t){
    const r=hit(a,t,{ability:this});
-   if(t.alive() && rand()<0.25){
+   if(t.alive() && rand()<0.3){
      const dur=ccDurBySDM(a);
      applyStatusWithLog(t,'stun',dur,'#b084ff',`${t.name} is smacked with the Crusader Shield and stunned for {dur} rounds!`, a);
    }
@@ -1489,7 +1509,7 @@ case 'Cleric': return [
   label:'Cleanse',
   desc:'Remove ailments and heal small wounds.',
   speed:'normal', type:'mag', target:'ally',
-  heal:{min:15,max:20}, healCoef:0.50, scalesWith:'SDM',
+  heal:{min:15,max:25}, healCoef:0.50, scalesWith:'SDM',
 
   use:function(a,t){
     if (!t) return;
@@ -1574,7 +1594,7 @@ case 'Cleric': return [
 },
 
       {label:'Attack', desc:'Loose a quick arrow.', speed:'fast', type:'phys', target:'enemy',
-       base:{min:45,max:55}, statCoef:0.40, isBasic:true,
+       base:{min:45,max:60}, statCoef:0.40, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Volley', desc:'Rain arrows over the battlefield.', speed:'normal', type:'phys', target:'all-enemies',
@@ -1582,7 +1602,7 @@ case 'Cleric': return [
        use:function(a,arr){ for(const t of arr){ if(!t.alive()) continue; hit(a,t,{ability:this}); } } },
 
       {label:'Snipe', desc:'Take careful aim for the vitals.', speed:'slow', type:'phys', target:'enemy',
-       base:{min:60,max:150}, statCoef:0.65, critBonus:0.30,
+       base:{min:60,max:135}, statCoef:0.65, critBonus:0.30,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:`Hunter's Mark`, desc:'Target takes increased damage until end of next round.', speed:'normal', type:'phys', target:'enemy',
@@ -1595,12 +1615,12 @@ case 'Cleric': return [
     /* ===== Monk ===== */
     case 'Monk': return [
       {label:'Flurry', desc:'Three successive strikes.', speed:'slow', type:'phys', target:'enemy',
-       base:{min:30,max:65}, statCoef:0.25,
+       base:{min:35,max:65}, statCoef:0.25,
        use:function(a,t){ for(let i=1;i<=3;i++){ if(!t.alive()) break;
          a._usingAbilityLabel = `Flurry (${i}/3)`; hit(a,t,{ability:this}); a._usingAbilityLabel = undefined; } } },
 
       {label:'Attack', desc:'Strike with increasing confidence.', speed:'fast', type:'phys', target:'enemy',
-       base:{min:40,max:50}, statCoef:0.40, isBasic:true,
+       base:{min:45,max:55}, statCoef:0.40, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Chi Wave', desc:'Cleanse CC/debuffs from all allies.', speed:'normal', type:'mag', target:'all-allies',
@@ -1609,10 +1629,10 @@ case 'Cleric': return [
          appendLog(count ? `A Chi Wave rips accross the battlefield. Negative effects washed away from ${count} allies.` : `No negative effects to cleanse.`); } },
 
       {label:'Palm Hit', desc:'Body blow that may stagger foes.', speed:'normal', type:'phys', target:'enemy',
- base:{min:25,max:35}, statCoef:0.30,
+ base:{min:30,max:40}, statCoef:0.30,
  use:function(a,t){
    const r=hit(a,t,{ability:this});
-   if(t.alive() && rand()<0.25){
+   if(t.alive() && rand()<0.33){
      const dur=ccDurBySDM(a);
      applyStatusWithLog(t,'stun',dur,'#b084ff',`${t.name} is staggered for {dur} rounds!`, a);
    }
@@ -1636,7 +1656,7 @@ case 'Cleric': return [
   label:'Life Drain',
   desc:'Steal life from a foe.',
   speed:'normal', type:'mag', target:'enemy',
-  base:{min:25,max:55}, statCoef:0.35,
+  base:{min:30,max:60}, statCoef:0.35,
 
   use:function(a,t){
     if (!a || !t) return;
@@ -1742,67 +1762,64 @@ case 'Cleric': return [
   label:'Plague',
   desc:'Afflict all foes with massive poison.',
   speed:'slow', type:'mag', target:'all-enemies',
-  base:{min:10,max:60}, statCoef:0.30,
+  base:{min:20,max:65}, statCoef:0.30,
 
   use:function(a, arr){
+    const aliveTargets = (arr || []).filter(t => t?.alive?.());
+    if (!aliveTargets.length){
+      appendLog?.(`${a.name} casts Plague, but there are no targets.`);
+      return;
+    }
 
-    // VFX target list + index map (COSMETIC ONLY)
-    const aliveTargets = (arr || []).filter(t => t && t.alive && t.alive());
     const idxMap = new Map();
     aliveTargets.forEach((t,i)=>idxMap.set(t,i));
 
-    // Match timing to vfxCastToTargets so impact lines up
-    const scene = getScene();
-    const projMs = vfxMs(((VFX?.PROJ_MS ?? 750) * 1.15));
+    const scene = getScene?.();
+    const projMsRaw = ((VFX?.PROJ_MS ?? 750) * 1.15);
+    const projMs = safeVfxMs(projMsRaw);
     const impactDelay = Math.max(0, Math.floor(projMs * 0.90));
-    const step = vfxMs(VFX?.AOE_STAGGER_MS ?? 140);
+    const step = safeVfxMs(VFX?.AOE_STAGGER_MS ?? 140);
 
-    // --- VFX ONLY: caster -> each target travel + green impact ---
+    // VFX ONLY: caster -> each target travel + green impact
     try {
       vfxCastToTargets?.(a, aliveTargets, {
         label: 'Plague',
-        proj: { ms: (VFX?.PROJ_MS ?? 750) * 1.15, color: 0x57ff7a, radius: 7 }, // GREEN poison
-        onImpact: (t) => {
-          vfxFlashColor?.(t, { color: 0x57ff7a, ms: 350, alpha: 0.25 });
-          // No text here — we want res.dmg from the real loop below
-        },
+        proj: { ms: projMsRaw, color: 0x57ff7a, radius: 7 },
+        onImpact: (t) => vfxFlashColor?.(t, { color: 0x57ff7a, ms: safeVfxMs(350), alpha: 0.25 }),
         staggerMs: (VFX?.AOE_STAGGER_MS ?? 140)
       });
     } catch {}
 
-    // --- ORIGINAL MECHANICS (unchanged) ---
-    for (const t of (arr || [])){
-      if (!t?.alive?.()) continue;
-
+    // Mechanics
+    for (const t of aliveTargets){
       const res = computeAbilityDamage(a, t, this);
 
       if (res.hit && !res.dodged && res.dmg > 0){
         addPoison(t, res.dmg);
-        logGreen(`${t.name} is afflicted by a horrible plague (+${res.dmg}).`);
+        logGreen?.(`${t.name} is afflicted by a horrible plague (+${res.dmg}).`);
 
-        // COSMETIC ONLY: show PLAGUE + -poison when the projectile reaches them
+        // Cosmetic text at impact time
         try {
           const i = idxMap.get(t);
           if (scene?.time?.delayedCall && i != null){
             const when = (i * step) + impactDelay;
-            const amt = res.dmg; // capture now
+            const amt = res.dmg;
             scene.time.delayedCall(when, () => {
               vfxFloatText?.(t, `PLAGUE`, {
-                ms: vfxMs(850),
-                fontSize: Math.floor(vfxScale(16)),
+                ms: safeVfxMs(850),
+                fontSize: Math.floor(safeVfxScale(16)),
                 color: (VFX_COL?.poison || '#57ff7a')
               });
               vfxFloatText?.(t, `-${amt} POISON`, {
-                ms: vfxMs(1100),
-                fontSize: Math.floor(vfxScale(16)),
+                ms: safeVfxMs(1100),
+                fontSize: Math.floor(safeVfxScale(16)),
                 color: (VFX_COL?.poison || '#57ff7a')
               });
             });
           }
         } catch {}
-
       } else {
-        appendLog(`${a.name}'s Plague misses ${t.name}.`);
+        appendLog?.(`${a.name}'s Plague misses ${t.name}.`);
       }
     }
   }
@@ -1904,7 +1921,7 @@ case 'Cleric': return [
     case 'Mystic': return [
       {label:'Stun', desc:'Quickly stun your foe. 40% success.', speed:'fast', type:'mag', target:'enemy',
        use:(a,t)=>{
-     if(rand()<0.40){
+     if(rand()<0.45){
      const dur=ccDurBySDM(a);
      applyStatusWithLog(t,'stun',dur,'#b084ff',`${a.name} stuns ${t.name} for {dur} rounds!`, a);
       } else {
@@ -1927,7 +1944,7 @@ case 'Cleric': return [
  }},
 
       {label:'Mental Breakdown', desc:'Crushing psychic blow.', speed:'slow', type:'mag', target:'enemy',
-       base:{min:60,max:90}, scalesWith:'SDM', statCoef:0.55,
+       base:{min:60,max:110}, scalesWith:'SDM', statCoef:0.55,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Premonition', desc:'All ally actions become fast next round.', speed:'fast', type:'mag', target:'all-allies',
@@ -2239,7 +2256,7 @@ function removeStatusKey(u, key){
   if (u._refresh) u._refresh(); return u.status.length!==before;
 }
 function cleanseCCAndDebuffs(u){
-  const toStrip=new Set(['stun','taunt','blind','berserk','def_down','poison']);
+  const toStrip=new Set(['stun','taunt','blind','berserk','def_down','poison','marked']);
   if (!u || !u.status) return false; const before=u.status.length;
   u.status=u.status.filter(s=>!toStrip.has(s.key)); if (u._refresh) u._refresh();
   return u.status.length!==before;

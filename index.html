@@ -694,14 +694,13 @@ case 'Electromancer': return [
   label: 'Chain Lightning',
   desc: 'Massive damage. 60% chance to jump to a new random target (any team), repeating.',
   speed: 'normal', type: 'mag', target: 'enemy',
-
   base: { min: 75, max: 115 }, statCoef: 0.65,
   bounceChance: 0.60,
 
   use: async function(a, first){
     if (!first || !first.alive()) return;
 
-    // One cue up front; hops suppress per-hit cue
+    // One cue up front
     vfxActCue?.(a, this.label);
 
     const all = [...player, ...enemy]
@@ -714,17 +713,25 @@ case 'Electromancer': return [
     let cur = first;
     let prev = a;
 
+    // how long the hop projectile takes (match hit() mag projectile feel)
+    const hopMs = Math.floor((VFX?.PROJ_MS ?? 400) * 1.15);
+    const hopPause = Math.max(40, Math.floor(hopMs * 0.55)); // readability pause
+
     while (cur && cur.alive()){
       const id = idOf(cur);
       if (seen.has(id)) break;
       seen.add(id);
 
+      // IMPORTANT: let hit() draw the projectile from prev -> cur
       hit(a, cur, {
         ability: this,
-        vfxFrom: prev,          // <- projectile hops prev -> cur
-        noActCueVFX: true,      // <- don't spam caster cue each hop
-        // _noRedirect: true,   // <- optional: ignore Shieldwall intercepts
+        vfxFrom: prev,
+        noActCueVFX: true,      // we already cued once above
+        // noProjectileVFX: false // default; leave it
       });
+
+      // give time for the hop to visually “launch” before we select next hop
+      if (typeof sleep === 'function') await sleep(hopPause);
 
       if (rand() >= this.bounceChance) break;
 
@@ -733,13 +740,12 @@ case 'Electromancer': return [
 
       prev = cur;
       cur = pool[(rand() * pool.length) | 0];
-
-      // optional: await sleep(ACTION_STEP_DELAY_MS);
     }
 
     appendLogHTML?.(`<span style="color:#a7c4ff">⚡ ${a.name}'s Chain Lightning crackles through the field!</span>`);
   }
-},
+}
+
 
   /* 4) God Tempest (normal) — self-only, once per game:
      - remove ALL negative effects
@@ -1827,26 +1833,19 @@ case 'Cleric': return [
         // impact happens when the projectile would reach the target
         const doImpact = () => {
           vfxFlashColor?.(t, { color: 0x57ff7a, ms: ms(350), alpha: 0.25 });
-
-          // ✅ PUT YOUR IMPACT-TIMED POISON LANGUAGE HERE
-          // (this replaces the immediate "POISONED" pop you suppressed with silentVFX)
-          vfxFloatText?.(t, `PLAGUE`, {
-            ms: ms(850),
-            fontSize: Math.floor(sc(16)),
-            color: (VFX_COL?.poison || '#57ff7a')
-          });
-
+         
           // If you want the amount shown at impact, you need the dmg per target.
           // Option A (recommended): store it on the unit during the mechanics loop:
           //   t._plagueLastAmt = res.dmg;
           // then use it here:
           const amt = t._plagueLastAmt | 0;
           if (amt > 0){
-            vfxFloatText?.(t, `+${amt} POISON`, {
-              ms: ms(1100),
-              fontSize: Math.floor(sc(16)),
-              color: (VFX_COL?.poison || '#57ff7a')
-            });
+           vfxFloatText?.(t, `-${amt} POISON`, {
+  ms: ms(1100),
+  fontSize: Math.floor(sc(16)),
+  color: (VFX_COL?.poison || '#57ff7a')
+});
+
           }
 
           // optional generic tag
@@ -3080,11 +3079,25 @@ function endRoundTick(){
       }
     }
 
-    // 3) Decrement durations (except poison)
-    for (const st of u.status){
-      if (st.key !== 'poison') st.dur--;
-    }
-    u.status = u.status.filter(s => s.dur > 0);
+    // Track expiries BEFORE we decrement
+const hadBleed = hasStatus(u, 'bleed');
+
+// Decrement durations (except poison)
+for (const st of u.status){ if (st.key !== 'poison') st.dur--; }
+u.status = u.status.filter(s=>s.dur > 0);
+
+// If Bleed expired this tick, announce it (cosmetic only)
+if (hadBleed && !hasStatus(u, 'bleed')){
+  appendLogHTML?.(`<span style="color:#ffb3b3">🩸 Bleed wears off of ${u.name}.</span>`);
+  if (!appendLogHTML) appendLog(`Bleed wears off of ${u.name}.`);
+
+  // optional tiny VFX tag
+  vfxFloatText?.(u, `BLEED END`, {
+    ms: (typeof vfxMs==='function' ? vfxMs(900) : 900),
+    fontSize: Math.floor((typeof vfxScale==='function' ? vfxScale(12) : 12)),
+    color: '#ffb3b3'
+  });
+}
 
     // 4) Shrug checks (bleed intentionally NOT included)
     if (hasStatus(u,'poison'))   tryShrug(u,'poison');
@@ -3597,15 +3610,15 @@ function rehydrateTarget(stepTarget, allies, foes){
   if (u) return u;
 
   // 4) If raw is "side|name", also match just the name portion
-  // (handles older payloads that lost side, or UI-only selection sending canonical)
   if (raw.includes('|')){
-    const nameOnly = raw.split('|').slice(1).join('|'); // keep safe if names ever contain '|'
+    const nameOnly = raw.split('|').slice(1).join('|');
     u = pool.find(x => String(x.name ?? '') === nameOnly);
     if (u) return u;
   }
 
   return null;
 }
+
 
 /* ---------- resolve (simultaneous) ---------- */
 async function resolveSimultaneous(){
@@ -3686,6 +3699,16 @@ if (ability.label==='Attack' && actor.kind==='phys' && hasStatus(actor,'blind') 
   appendLog(`${actor.name} is blinded and whiffs!`);
   await sleep(ACTION_DELAY_MS);
   continue;
+}
+
+if (ability.label === 'Dispel') {
+  console.log('[DBG] Dispel pre-validity', {
+    rawStepTarget: step.target,
+    rawTargetName:
+      (step.target && typeof step.target === 'object')
+        ? (step.target.targetName ?? step.target.name ?? step.target.netId ?? null)
+        : step.target
+  });
 }
 
 // ✅ You MUST define these BEFORE rehydrating
@@ -4656,14 +4679,19 @@ assignNetIds(); // assigns netId based on current role
 
   // Convert my local choice to the wire shape
   function choiceToWire(c){
-    return {
-      actorName:    c.actor?.name || '',
-      abilityLabel: c.ability?.label || 'Attack',
-      targetName:   (c.ability?.target==='self') ? null :
-                    (c.target ? (c.target.name||'') : null)
-    };
-  }
-  window.choiceToWire = choiceToWire;
+  const abTarget = c.ability?.target;
+
+  return {
+    actorName:    c.actor?.name || '',
+    abilityLabel: c.ability?.label || 'Attack',
+
+    // IMPORTANT: Use canonicalKey for PvP-safe identity
+    targetName:
+      (abTarget === 'self') ? null :
+      (c.target ? (typeof canonicalKey === 'function' ? canonicalKey(c.target) : (c.target.name || '')) : null)
+  };
+}
+window.choiceToWire = choiceToWire;
 
   // Convert opponent wires back to local enemy-side choices
   function wireToChoiceEnemy(w){
@@ -4671,17 +4699,18 @@ assignNetIds(); // assigns netId based on current role
     if (!actor) return null;
     const abList  = abilitiesFor(actor);
     const ability = abList.find(a=>a.label===w.abilityLabel) || abList[0];
-    let target = null;
+    // Keep target in wire form; resolveSimultaneous() will rehydrate using allies/foes for THIS actor
+let target = null;
 
-    if (w.targetName){
-      if (ability.target==='ally')   target = enemy.find(u=>u.name===w.targetName) || null;
-      else if (ability.target==='enemy') target = player.find(u=>u.name===w.targetName) || null;
-    } else {
-      if (ability.target==='self')  target = actor;
-      else if (ability.target==='ally')  target = pickCanonical(enemy.filter(u=>u.alive()));
-      else if (ability.target==='enemy') target = pickCanonical(player.filter(u=>u.alive()));
-    }
-    return { actor, ability, target };
+if (w.targetName) {
+  target = { targetName: w.targetName };
+} else if (ability.target === 'self') {
+  target = actor;
+} else {
+  target = null;
+}
+
+return { actor, ability, target };
   }
   window.wireToChoiceEnemy = wireToChoiceEnemy;
 
@@ -4736,18 +4765,18 @@ assignNetIds(); // assigns netId based on current role
       const abList  = abilitiesFor(actor);
       const ability = abList.find(a=>a.label===w.abilityLabel) || abList[0];
 
-      let target = null;
-      if (w.targetName){
-        if (ability.target==='self')  target = actor;
-        else if (ability.target==='ally')  target = player.find(u=>u.name===w.targetName) || null;
-        else if (ability.target==='enemy') target = enemy.find(u=>u.name===w.targetName) || null;
-      }
-      if (!target){
-        if (ability.target==='self')  target = actor;
-        else if (ability.target==='ally')  target = pickCanonical(player.filter(u=>u.alive()));
-        else if (ability.target==='enemy') target = pickCanonical(enemy.filter(u=>u.alive()));
-      }
-      return { actor, ability, target };
+      // Keep target in wire form; resolveSimultaneous() will rehydrate deterministically
+let target = null;
+
+if (w.targetName) {
+  target = { targetName: w.targetName };
+} else if (ability.target === 'self') {
+  target = actor;
+} else {
+  target = null;
+}
+
+return { actor, ability, target };
     });
 
     // enemy from remote wires

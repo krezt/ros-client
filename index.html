@@ -3139,7 +3139,12 @@ const statusTipFor = (key, u) => {
     case 'bleed': return 'Bleed: Takes physical % damage each round.';
     case 'berserk': return 'Berserk: Attack randomly.';
     case 'invisible': return 'Invisible: Targeted attacks miss.';
-
+    case 'marked': return 'Marked: target takes 185% damage.';
+    case 'shinobi_haste': return 'Shinobi Haste: +1 additional attack.';
+    case 'arcane_echo': return 'Doublecast next spell with additional power.';
+    case 'divine_shield': return 'Divine Shield: Protected from most damage.';
+    case 'shield_redirect': return 'Shieldwall: Warrior intercepts his.';
+    case 'premonition': return 'Premonition: Abilities cast fast.';
     case 'def_up': return 'DEF Up: Takes less damage.';
     case 'def_down': return 'DEF Down: Takes more damage.';
     case 'atk_up': return 'ATK Up: Deals more physical damage.';
@@ -3534,17 +3539,17 @@ if (hadBerserk && !hasStatus(u, 'berserk')){
   }
 }
 
-function vfxHardCC(caster, target, key, { ms=900, showOrigin=true } = {}){
+function vfxHardCC(caster, target, key, { ms=900, showOrigin=true, showText=false } = {}) {
   if (!target) return;
- 
- // --- COSMETIC ONLY: de-dupe hard CC on same unit/key in the same moment ---
+
+  // --- COSMETIC ONLY: de-dupe hard CC on same unit/key in the same moment ---
   const scene = getScene?.();
   const now = (scene?.time && typeof scene.time.now === 'number') ? scene.time.now : Date.now();
-  const k = `cc:${key}`;
+  const kk = `cc:${key}`;
   const last = target._vfxCCLast || { t: -999999, k: '' };
   const windowMs = vfxMs?.(180) ?? 180;
-  if (last.k === k && (now - last.t) < windowMs) return;
-  target._vfxCCLast = { t: now, k };
+  if (last.k === kk && (now - last.t) < windowMs) return;
+  target._vfxCCLast = { t: now, k: kk };
 
   const label =
     (key === 'stun')    ? (VFX_TEXT?.stun    || 'STUNNED') :
@@ -3553,15 +3558,17 @@ function vfxHardCC(caster, target, key, { ms=900, showOrigin=true } = {}){
     (key === 'taunt')   ? (VFX_TEXT?.taunt   || 'TAUNT') :
                           (VFX_TEXT?.[key]   || String(key||'STATUS').toUpperCase());
 
-  const hex = (VFX?.CC_HEX ?? 0xb084ff);          // purple
+  const hex     = (VFX?.CC_HEX ?? 0xb084ff);      // purple
   const textCol = (VFX_COL?.cc ?? '#b084ff');     // purple text
 
-  // show WHO cast it
-  if (caster) vfxActCue?.(caster, label);
+  // show WHO cast it (OPTIONAL)
+  if (showText && caster) {
+    try { vfxActCue?.(caster, label); } catch {}
+  }
 
   // caster -> target motion (optional)
   try {
-    if (showOrigin && caster && typeof vfxProjectile === 'function'){
+    if (showOrigin && caster && typeof vfxProjectile === 'function') {
       vfxProjectile(caster, target, {
         ms: vfxMs?.((VFX?.PROJ_MS ?? 750) * 0.90) ?? ((VFX?.PROJ_MS ?? 750) * 0.90),
         color: hex,
@@ -3570,17 +3577,24 @@ function vfxHardCC(caster, target, key, { ms=900, showOrigin=true } = {}){
     }
   } catch {}
 
-  // impact language on target
+  // impact language on target (visuals always; text optional)
   try {
     vfxFlashColor?.(target, { color: hex, ms: vfxMs?.(320) ?? 320, alpha: 0.26 });
-    vfxShakePanel?.(target, { px: Math.floor((VFX?.SHAKE_PX ?? 7) * 1.0), ms: vfxMs?.((VFX?.SHAKE_MS ?? 250) * 1.05) ?? ((VFX?.SHAKE_MS ?? 250) * 1.05) });
-    vfxFloatText?.(target, label, {
-      ms: vfxMs?.(ms) ?? ms,
-      fontSize: Math.floor((typeof vfxScale === 'function' ? vfxScale(16) : 16)),
-      color: textCol
+    vfxShakePanel?.(target, {
+      px: Math.floor((VFX?.SHAKE_PX ?? 7) * 1.0),
+      ms: vfxMs?.((VFX?.SHAKE_MS ?? 250) * 1.05) ?? ((VFX?.SHAKE_MS ?? 250) * 1.05)
     });
+
+    if (showText) {
+      vfxFloatText?.(target, label, {
+        ms: vfxMs?.(ms) ?? ms,
+        fontSize: Math.floor((typeof vfxScale === 'function' ? vfxScale(16) : 16)),
+        color: textCol
+      });
+    }
   } catch {}
 }
+
 
 function vfxPoisonTick(u, amount){
   vfxFlashColor(u, { color: 0x57ff7a, ms: vfxMs(300), alpha: 0.40 });

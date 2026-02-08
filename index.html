@@ -984,8 +984,8 @@ case 'Shinobi': return [
   /* 3) Invisibility (normal) — untargetable for 2 rounds */
   {
     label: 'Invisibility',
-    desc: 'Become untargetable from cast and also next round (AoE/berserk can still hit).',
-    speed: 'normal', type: 'mag', target: 'self',
+    desc: 'Become untargetable from cast and next round.',
+    speed: 'slow', type: 'mag', target: 'self',
     use: function(a){
       const dur = 2;
       removeStatusKey(a, 'invisible');
@@ -1690,7 +1690,7 @@ a._rezUsed = true;
     /* ===== Monk ===== */
     case 'Monk': return [
       {label:'Flurry', desc:'Three successive strikes.', speed:'slow', type:'phys', target:'enemy',
-       base:{min:55,max:75}, statCoef:0.35,
+       base:{min:50,max:65}, statCoef:0.35,
        use:function(a,t){ for(let i=1;i<=3;i++){ if(!t.alive()) break;
          a._usingAbilityLabel = `Flurry (${i}/3)`; hit(a,t,{ability:this}); a._usingAbilityLabel = undefined; } } },
 
@@ -1704,7 +1704,7 @@ a._rezUsed = true;
          appendLog(count ? `A Chi Wave rips accross the battlefield. Negative effects washed away from ${count} allies.` : `No negative effects to cleanse.`); } },
 
       {label:'Palm Hit', desc:'Body blow that may stagger foes.', speed:'normal', type:'phys', target:'enemy',
- base:{min:35,max:45}, statCoef:0.4,
+ base:{min:40,max:50}, statCoef:0.4,
  use:function(a,t){
    const r=hit(a,t,{ability:this});
    if(t.alive() && rand()<0.33){
@@ -3064,6 +3064,16 @@ function updateStatusView(u){
   if (!u || !u._ui) return;
   const ui=u._ui, scene=ui.scene;
 
+ui._statusTip ||= scene.add.text(0, 0, '', {
+  fontSize: '12px',
+  color: '#ffffff',
+  backgroundColor: 'rgba(0,0,0,0.75)',
+  padding: { x: 6, y: 3 }
+})
+.setOrigin(0, 1)
+.setDepth(9999)
+.setVisible(false);
+
   const effATK=u.ATK*atkMult(u), effSDM=u.SDM*sdmMult(u), effDEF=u.DEF*defMult(u);
   ui.statsTxt.setText(`ATK ${effATK.toFixed(1)}  •  SDM ${effSDM.toFixed(1)}  •  DEF ${effDEF.toFixed(1)}`);
 
@@ -3096,17 +3106,78 @@ function updateStatusView(u){
 );
 
 
-  let used=0,line=0;
-  for (const key of present){
-    const texKey=`status_${key}`; let node,w=ICON_SIZE;
-    if (scene.textures.exists(texKey)){ node=scene.add.image(0,0,texKey).setOrigin(0,0); node.setDisplaySize(ICON_SIZE,ICON_SIZE); }
-    else { const fontPx=Math.max(12,Math.round(ICON_SIZE*0.8)); node=scene.add.text(0,0,labelFor(key),{fontSize:`${fontPx}px`,color:'#dfe7ff'}); w=node.width; }
-    if (used>0 && used+padX+w>maxW){ line++; if(line>1){ node.destroy(); continue; } used=0; }
-    const x=startX+(used>0?padX:0)+used, y=startY+(line*lineH);
-    ui.panel.add(node); node.setPosition(x,y); ui.statusNodes.push(node);
-    if (STACKABLE.has(key)){ const n=countStacks(u,key); if(n>1){ const sTxt=scene.add.text(0,0,`×${n}`,{fontSize:`${Math.max(10,Math.round(ICON_SIZE*0.6))}px`,color:'#ffd37a'}); sTxt.setOrigin(1,1); sTxt.setPosition(x+ICON_SIZE-2,y+ICON_SIZE-2); ui.panel.add(sTxt); ui.statusNodes.push(sTxt); } }
-    used += (used>0?padX:0) + w;
+  let used = 0, line = 0;
+for (const key of present) {
+  const texKey = `status_${key}`;
+  let node, w = ICON_SIZE;
+
+  if (scene.textures.exists(texKey)) {
+    node = scene.add.image(0, 0, texKey).setOrigin(0, 0);
+    node.setDisplaySize(ICON_SIZE, ICON_SIZE);
+  } else {
+    const fontPx = Math.max(12, Math.round(ICON_SIZE * 0.8));
+    node = scene.add.text(0, 0, labelFor(key), { fontSize: `${fontPx}px`, color: '#dfe7ff' });
+    w = node.width;
   }
+
+  if (used > 0 && used + padX + w > maxW) {
+    line++;
+    if (line > 1) { node.destroy(); continue; }
+    used = 0;
+  }
+
+  const x = startX + (used > 0 ? padX : 0) + used;
+  const y = startY + (line * lineH);
+
+  ui.panel.add(node);
+  node.setPosition(x, y);
+  ui.statusNodes.push(node);
+
+  // -------- (2) Hover tooltip (name only) --------
+  node.setInteractive({ useHandCursor: true });
+
+  node.on('pointerover', (pointer) => {
+    ui._statusTip.setText(labelFor(key));
+    ui._statusTip.setVisible(true);
+
+    // follow mouse
+    ui._statusTip.setPosition(pointer.worldX + 10, pointer.worldY - 6);
+  });
+
+  node.on('pointermove', (pointer) => {
+    if (!ui._statusTip.visible) return;
+    ui._statusTip.setPosition(pointer.worldX + 10, pointer.worldY - 6);
+  });
+
+  node.on('pointerout', () => {
+    ui._statusTip.setVisible(false);
+  });
+
+  // -------- stack count overlay --------
+  if (STACKABLE.has(key)) {
+    const n = countStacks(u, key);
+    if (n > 1) {
+      const sTxt = scene.add.text(0, 0, `×${n}`, {
+        fontSize: `${Math.max(10, Math.round(ICON_SIZE * 0.6))}px`,
+        color: '#ffd37a'
+      });
+      sTxt.setOrigin(1, 1);
+      sTxt.setPosition(x + ICON_SIZE - 2, y + ICON_SIZE - 2);
+
+      // -------- (3) Don't steal hover / clicks --------
+      sTxt.disableInteractive?.();          // just in case
+      sTxt.setInteractive = undefined;      // extra safety if you accidentally call it later
+      // If you use input on top-only objects in your game, this also helps:
+      // sTxt.setDepth(node.depth + 1);
+
+      ui.panel.add(sTxt);
+      ui.statusNodes.push(sTxt);
+    }
+  }
+
+  used += (used > 0 ? padX : 0) + w;
+}
+
 }
 
 /* ---------- end-of-round ticks & shrug ---------- */

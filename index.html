@@ -343,7 +343,7 @@ function clearActionBar(){ if (actionButtonsEl) actionButtonsEl.innerHTML = ''; 
 
 /* ---------- tiny async helpers ---------- */
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-const SLEEP_TINY_MS=1250, ACTION_DELAY_MS=2000, ACTION_STEP_DELAY_MS=2000, ROUND_END_DELAY_MS=2000;
+const SLEEP_TINY_MS=1500, END_TICK_DELAY_MS = 2000, ACTION_DELAY_MS=2000, ACTION_STEP_DELAY_MS=2000, ROUND_END_DELAY_MS=2000;
 
 /* ---------- RNG (unified, deterministic) ---------- */
 (function(){
@@ -372,12 +372,12 @@ const CONFIG = {
 
   ARMOR_K: 0.025, DAMAGE_GLOBAL: 1.15,
 
-  SHRUG_BASE: 0.04, SHRUG_TGH_FACTOR: 0.0025,
+  SHRUG_BASE: 0.05, SHRUG_TGH_FACTOR: 0.0025,
 
   BUFF_BASE_MIN: 2, BUFF_BASE_MAX: 4, BUFF_SDM_PER_BONUS: 15, BUFF_MAX_CAP: 6,
 
   PROC: {
-    Cleric: { chance: 0.5 }, Mage: { chance: 0.5 }, Monk: { chance: 0.6 },
+    Cleric: { chance: 0.5 }, Mage: { chance: 0.5 }, Monk: { chance: 0.75 },
     Mystic: { chance: 0.5 }, Necromancer: { chance: 0.5 }, Paladin: { chance: 0.5 },
   },
 
@@ -653,10 +653,10 @@ case 'Electromancer': return [
   desc: 'Zap enemies and energize allies. Small chance to stun enemies (1).',
   speed: 'fast', type: 'mag', target: 'all-enemies',
 
-  base: { min: 10, max: 18 }, statCoef: 0.25,
+  base: { min: 10, max: 16 }, statCoef: 0.25,
   heal: { min: 8, max: 14 }, healCoef: 0.18, scalesWith: 'SDM',
 
-  stunChance: 0.10,
+  stunChance: 0.15,
 
   use: function(a, foes){
     const allies  = (a.team === 'player') ? player : enemy;
@@ -697,10 +697,10 @@ case 'Electromancer': return [
   */
   {
   label: 'Chain Lightning',
-  desc: 'Massive damage. 60% chance to jump to a new random target (any team), repeating.',
+  desc: 'Massive damage. 65% chance to jump to a new random target (any team), repeating.',
   speed: 'normal', type: 'mag', target: 'enemy',
   base: { min: 75, max: 115 }, statCoef: 0.65,
-  bounceChance: 0.60,
+  bounceChance: 0.65,
 
   use: async function(a, first){
     if (!first || !first.alive()) return;
@@ -761,17 +761,28 @@ case 'Electromancer': return [
     label: 'God Tempest',
     desc: 'Once per game: cleanse negatives, restore to full HP, gain SDM↑ and DEF↑.',
     speed: 'normal', type: 'mag', target: 'self',
-
-    sdmDur: 3,
-    defDur: 3,
+    usesMax: 1,
+    usesKey: 'god_tempest',
+    sdmDur: 4,
+    defDur: 4,
 
     use: function(a){
       if (!a) return;
-      if (a._godTempestUsed){
-        appendLog(`${a.name} has already used God Tempest.`);
-        return;
-      }
-      a._godTempestUsed = true;
+      // Backward compatible: if old flag exists, mirror it
+if (a._godTempestUsed) {
+  appendLog(`${a.name} has already used God Tempest.`);
+  return;
+}
+
+// If resolveSimultaneous already spent the use, left will be 0 here after first cast.
+// But keep a local safety gate too:
+if ((this.usesMax|0) > 0 && getUsesLeft(a, this) <= 0) {
+  appendLog(`${a.name} has already used God Tempest.`);
+  return;
+}
+
+// mirror old flag for safety
+a._godTempestUsed = true;
 
       // ---- CLEANSE ALL NEGATIVES ----
       // Your engine doesn't tag statuses with "kind", so we need an explicit list.
@@ -803,7 +814,7 @@ const removed = beforeN - a.status.length;
       // VFX
       vfxActCue?.(a, this.label);
       vfxFlashColor?.(a, { color: 0xa7c4ff, ms: vfxMs(450), alpha: 0.22 });
-      vfxFloatText?.(a, `TEMPEST`, { ms: vfxMs(1200), fontSize: Math.floor(vfxScale(16)), color: '#a7c4ff' });
+      vfxFloatText?.(a, `TEMPEST`, { ms: vfxMs(1500), fontSize: Math.floor(vfxScale(16)), color: '#a7c4ff' });
 
       const healed = Math.max(0, a.hp - beforeHP);
       if (healed > 0) vfxHealImpact?.(a, a, healed, this.label);
@@ -817,17 +828,17 @@ const removed = beforeN - a.status.length;
   */
   {
     label: 'Shift',
-    desc: 'For 2 rounds, dodge all physical attacks.',
+    desc: 'On cast and one additional round, dodge all physical attacks.',
     speed: 'normal', type: 'mag', target: 'self',
 
     use: function(a){
-      const dur = 3;
+      const dur = 2;
       removeStatusKey(a, 'shift');
       pushStatus(a, { key:'shift', dur });
 
       vfxActCue?.(a, this.label);
       vfxFlashColor?.(a, { color: 0xbdbdff, ms: vfxMs(360), alpha: 0.18 });
-      vfxFloatText?.(a, `SHIFT ${dur}`, { ms: vfxMs(1100), fontSize: Math.floor(vfxScale(14)), color: '#bdbdff' });
+      vfxFloatText?.(a, `SHIFT ${dur}`, { ms: vfxMs(1500), fontSize: Math.floor(vfxScale(14)), color: '#bdbdff' });
 
       appendLogHTML?.(`<span style="color:#bdbdff">✨ ${a.name} shifts out of phase (Shift ${dur}).</span>`);
     }
@@ -872,7 +883,7 @@ case 'Shinobi': return [
     speed: 'fast', type: 'phys', target: 'enemy',
     base: { min: 24, max: 44 }, statCoef: 0.45, isBasic: true,
 
-    procChance: 0.50,
+    procChance: 0.55,
 
     use: function(a, t){
       if (!t || !t.alive()) return;
@@ -904,12 +915,12 @@ case 'Shinobi': return [
 
       // One punchy callout if ANY proc happened
       if (doubleProcs > 0){
-        vfxFloatText?.(t, `DOUBLE!`, { ms: vfxMs(900), fontSize: Math.floor(vfxScale(16)), color: '#c9c9ff' });
+        vfxFloatText?.(t, `COMBO!`, { ms: vfxMs(1250), fontSize: Math.floor(vfxScale(16)), color: '#c9c9ff' });
         vfxFlashColor?.(t, { color: 0xc9c9ff, ms: vfxMs(220), alpha: 0.18 });
       }
 
       if (hits >= 3){
-        appendLogHTML?.(`<span style="color:#c9c9ff">🥷 ${a.name} strikes in a blur (${hits} hits)!</span>`);
+        appendLogHTML?.(`<span style="color:#c9c9ff">🥷 ${a.name} strikes rapidly with (${hits} hits)!</span>`);
       }
     }
   },
@@ -978,24 +989,30 @@ case 'Shinobi': return [
 
   },
 
-  /* 5) Potion of Regeneration (fast) — 2 uses; heal %; cure poison */
+  /* 5) Potion of Regeneration (fast) — 2 uses; heal 30-40%; cure poison */
   {
     label: 'Potion of Regeneration',
     desc: 'Heal 25–35% max HP and cure poison (2 uses).',
     speed: 'fast', type: 'mag', target: 'self',
     usesMax: 2,
+    usesKey: 'potion_regen',
     pctMin: 0.30,
     pctMax: 0.40,
 
     use: function(a){
       if (!a) return;
 
-      if (typeof a._shinobiPotionUses !== 'number') a._shinobiPotionUses = 0;
-      if (a._shinobiPotionUses >= this.usesMax){
-        appendLog(`${a.name} has no Potions of Regeneration left.`);
-        return;
-      }
-      a._shinobiPotionUses++;
+      // Backward compatible mirror
+if (typeof a._shinobiPotionUses !== 'number') a._shinobiPotionUses = 0;
+
+// Resolve-time should spend automatically, but keep a safety gate:
+if ((this.usesMax|0) > 0 && getUsesLeft(a, this) <= 0) {
+  appendLog(`${a.name} has no Potions of Regeneration left.`);
+  return;
+}
+
+// Mirror legacy counter for now (optional, but safe)
+a._shinobiPotionUses = Math.min(this.usesMax|0, a._shinobiPotionUses + 1);
 
       removeStatusKey(a, 'poison');
 
@@ -1012,7 +1029,7 @@ case 'Shinobi': return [
       vfxActCue?.(a, this.label);
       vfxFlashColor?.(a, { color: 0x57ff7a, ms: vfxMs(320), alpha: 0.22 });
       if (healed > 0) vfxHealImpact?.(a, a, healed, this.label);
-      vfxFloatText?.(a, `POTION (${this.usesMax - a._shinobiPotionUses} left)`, {
+      vfxFloatText?.(a, `POTION (${getUsesLeft(a, this)} left)`, {
         ms: vfxMs(1200), fontSize: Math.floor(vfxScale(13)), color: (VFX_COL?.buff || '#a7c4ff')
       });
 
@@ -1411,7 +1428,10 @@ if (wasPoisoned){
   label: 'Resurrection',
   desc: 'Revive a fallen ally (once) or heal if alive.',
   speed: 'slow', type: 'mag', target: 'ally',
-  allowDeadTarget: true,
+  usesMax: 1,
+usesKey: 'resurrection',
+usesConsumesOn: 'revive', // only spend the “charge” when reviving a dead ally
+allowDeadTarget: true,
 
   // Optional: keep heal numbers on the ability so you can reuse `this`
   heal: { min: 20, max: 40 }, healCoef: 0.30, scalesWith: 'SDM',
@@ -1420,10 +1440,13 @@ if (wasPoisoned){
     if (!t) return;
 
     // One-time revive gate
-    if (a._rezUsed && !t.alive?.()){
-      appendLog(`${a.name} has already used Resurrection.`);
-      return;
-    }
+    if (!t.alive?.()) {
+  // revive attempt consumes the limited use
+  if ((this.usesMax|0) > 0 && getUsesLeft(a, this) <= 0) {
+    appendLog(`${a.name} has already used Resurrection.`);
+    return;
+  }
+}
 
     // If alive: treat as a normal heal using THIS ability's heal stats
     if (t.alive?.()){
@@ -1446,8 +1469,14 @@ if (wasPoisoned){
     }
 
     // If dead: revive with % HP, cure poison, reset KO latches
-    const reviveHP = Math.max(1, Math.floor(t.maxHP * 0.35));
+    const reviveHP = Math.max(1, Math.floor(t.maxHP * 0.45));
     t.hp = reviveHP;
+
+// Spend the one-time revive charge NOW (only when a revive actually happens)
+if ((this.usesMax|0) > 0) spendUse(a, this);
+
+// Keep legacy flag for safety
+a._rezUsed = true;
 
     // Clear poison + any “dead state” flags so KO can happen again later
     removeStatusKey(t, 'poison');
@@ -1465,7 +1494,6 @@ if (wasPoisoned){
 
     appendLogHTML(`<span style="color:#a7c4ff">✝ ${a.name} resurrects ${t.name} with ${reviveHP} HP!</span>`);
 
-    a._rezUsed = true;
   }
 },
 
@@ -2433,6 +2461,41 @@ function pushStatus(u, st, opts = null){
   }
 }
 
+function getUsesState(u){
+  if (!u) return null;
+  if (!u._abilityUses) u._abilityUses = {}; // usesKey -> usedCount
+  return u._abilityUses;
+}
+
+function abilityUsesKey(u, ability){
+  // Prefer explicit key so changing labels doesn't break.
+  return ability?.usesKey || `${u?.job || 'Unit'}|${ability?.label || 'Ability'}`;
+}
+
+function getUsesUsed(u, ability){
+  const max = ability?.usesMax | 0;
+  if (!max) return 0;
+  const st = getUsesState(u);
+  const k = abilityUsesKey(u, ability);
+  return (st?.[k] | 0);
+}
+
+function getUsesLeft(u, ability){
+  const max = ability?.usesMax | 0;
+  if (!max) return null; // unlimited
+  return Math.max(0, max - getUsesUsed(u, ability));
+}
+
+function spendUse(u, ability){
+  const max = ability?.usesMax | 0;
+  if (!max) return true;
+  const st = getUsesState(u);
+  const k = abilityUsesKey(u, ability);
+  const used = (st[k] | 0);
+  if (used >= max) return false;
+  st[k] = used + 1;
+  return true;
+}
 
 function removeStatusKey(u, key){
   if (!u || !u.status) return false;
@@ -3864,6 +3927,26 @@ if (ability?.label === 'Dispel') {
   });
 }
 
+// ===== Limited-use gate (authoritative) =====
+const usesMax = ability?.usesMax | 0;
+if (usesMax > 0) {
+  const left = getUsesLeft(actor, ability);
+
+  // Special case: some abilities only consume on certain outcomes (e.g. Resurrection)
+  const consumesOn = ability?.usesConsumesOn || 'cast';
+
+  if (left <= 0) {
+    appendLog(`${actor.name} tries to use ${ability.label}, but it has no uses left.`);
+    await sleep(ACTION_DELAY_MS);
+    continue;
+  }
+
+  // Default: consume on cast (most abilities)
+  if (consumesOn === 'cast') {
+    spendUse(actor, ability);
+  }
+}
+
 const doInvoke = async () => (
   typeof ability.use === 'function'
     ? ability.use.call(
@@ -3894,9 +3977,13 @@ const doInvoke = async () => (
     await sleep(ACTION_DELAY_MS);
   }
 
+    // Extra pause before end-of-round ticks (purely cosmetic)
+  await sleep(typeof END_TICK_DELAY_MS === 'number' ? END_TICK_DELAY_MS : vfxMs?.(1000) ?? 1000);
+
   endRoundTick();
 
   await sleep(ROUND_END_DELAY_MS);
+
 
   const pAlive=player.filter(u=>u.alive()), eAlive=enemy.filter(u=>u.alive());
   if (eAlive.length===0){ appendLog('🏆 Victory!'); return 'win'; }
@@ -3924,6 +4011,23 @@ function renderActionBarForCurrent(){
   if (!actor){ actionPromptEl.textContent=''; return; }
   actionPromptEl.textContent = `Choose action for ${actor.name}`;
 
+  // ---- local helper: label with uses ----
+  const labelWithUses = (ab) => {
+    const max = ab?.usesMax | 0;
+    if (!max) return ab?.label || '';
+    const left = (typeof getUsesLeft === 'function') ? getUsesLeft(actor, ab) : null;
+    // If helpers aren't present, fall back to just label
+    if (left == null) return ab.label;
+    return `${ab.label} (${left}/${max})`;
+  };
+
+  const isOutOfUses = (ab) => {
+    const max = ab?.usesMax | 0;
+    if (!max) return false;
+    const left = (typeof getUsesLeft === 'function') ? getUsesLeft(actor, ab) : max;
+    return (left | 0) <= 0;
+  };
+
   const makeButton = (ability) => {
     const btn = document.createElement('button');
     btn.className = 'action-btn';
@@ -3931,10 +4035,17 @@ function renderActionBarForCurrent(){
     const s = ability.speed || 'normal';
     const on = { fast:3, normal:2, slow:1 }[s] ?? 2;
 
+    const disabled = isOutOfUses(ability);
+    if (disabled) {
+      btn.disabled = true;
+      btn.classList.add('disabled');
+      btn.title = 'No uses left';
+    }
+
     btn.innerHTML = `
       <div class="btn-inner">
         <div class="text">
-          <div class="label">${ability.label}</div>
+          <div class="label">${labelWithUses(ability)}</div>
           <div class="desc">${ability.desc || ''}</div>
         </div>
         <div class="speed ${s}" title="${s}">
@@ -3946,6 +4057,12 @@ function renderActionBarForCurrent(){
     `;
 
     btn.onclick = () => {
+      // UX-only guard (authoritative spending should still be in resolveSimultaneous)
+      if (isOutOfUses(ability)) {
+        appendLog?.(`${actor.name} has no uses left for ${ability.label}.`);
+        return;
+      }
+
       _pendingAbility = ability;
 
       if (ability.target === 'enemy' || ability.target === 'ally' || ability.target === 'any') {
@@ -3963,7 +4080,7 @@ function renderActionBarForCurrent(){
     return btn;
   };
 
-  // ✅ FIX 1: Real placeholder button factory (no "..." anywhere)
+  // Real placeholder button factory (no "..." anywhere)
   const makePlaceholder = () => {
     const ph = document.createElement('button');
     ph.className = 'action-btn placeholder';
@@ -4149,7 +4266,15 @@ class GameScene extends Phaser.Scene{
       for (const job of JOB_LIST){
         this.load.image(`portrait_${job}`, `${base}/portraits/${encodeURIComponent(job)}.png`);
       }
-      const STATUS_KEYS = ['poison','stun','taunt','blind','berserk','def_down','def_up','atk_up','sdm_up','guard','marked','premonition','arcane_echo','divine_shield','shield_redirect','counter'];
+      const STATUS_KEYS = [
+  'poison','bleed',
+  'stun','taunt','blind','berserk',
+  'def_down','def_up','atk_up','sdm_up',
+  'guard','marked','premonition','arcane_echo',
+  'divine_shield','shield_redirect','counter',
+  'invisible','shift','shinobi_haste'
+];
+
       for (const k of STATUS_KEYS){
         this.load.image(`status_${k}`, `${base}/status/${k}.png`);
       }

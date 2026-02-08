@@ -286,6 +286,19 @@ window.el = window.el || function el(tag, attrs = {}, ...kids){
   return n;
 };
 
+// ---------- limited-use reset (must exist before WS messages can trigger startBattleFromDraft) ----------
+window.resetAbilityUsesForBattle = window.resetAbilityUsesForBattle || function resetAbilityUsesForBattle(units){
+  for (const u of (units || [])) {
+    if (!u) continue;
+    // new system
+    u._abilityUses = {};
+    // clear legacy flags/counters (safe)
+    delete u._godTempestUsed;
+    delete u._shinobiPotionUses;
+    delete u._rezUsed;
+  }
+};
+
 /* ---------- error overlay ---------- */
 (function(){
   function showErrorOverlay(m){
@@ -4897,8 +4910,8 @@ function startBattleFromDraft(){
   player = (Array.isArray(PVP.picksMe) ? PVP.picksMe : []).map(job => makeUnit(job, 'player'));
   enemy  = (Array.isArray(PVP.picksOpp) ? PVP.picksOpp : []).map(job => makeUnit(job, 'enemy'));
   ensureUnitSides();  // label units as host/guest before scene restart
-resetAbilityUsesForBattle(player);
-resetAbilityUsesForBattle(enemy);
+window.resetAbilityUsesForBattle?.(player);
+window.resetAbilityUsesForBattle?.(enemy);
 assignNetIds(); // assigns netId based on current role
 
   PVP.phase = 'battle';

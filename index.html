@@ -892,7 +892,7 @@ case 'Shinobi': return [
     label: 'Attack',
     desc: 'Fast strike. Chance to double strike.',
     speed: 'fast', type: 'phys', target: 'enemy',
-    base: { min: 35, max: 60 }, statCoef: 0.45, isBasic: true,
+    base: { min: 30, max: 55 }, statCoef: 0.45, isBasic: true,
 
     procChance: 0.55,
 
@@ -1029,8 +1029,8 @@ case 'Shinobi': return [
 
   /* 5) Potion of Regeneration (fast) — 3 uses; heal 30-40%; cure poison */
   {
-    label: 'Regeneration Potion',
-    desc: 'Heal 25–35% max HP and cure poison (3 uses).',
+    label: 'Regen Potion',
+    desc: 'Heal 25–35% max HP and cure poison.',
     speed: 'fast', type: 'mag', target: 'self',
     usesMax: 3,
     usesKey: 'potion_regen',
@@ -3069,18 +3069,32 @@ function updateStatusView(u){
 
   ui.statusNodes ||= []; for (const n of ui.statusNodes) n.destroy(); ui.statusNodes.length=0;
 
-  const ORDER=['divine_shield','guard','shield_redirect','premonition','counter','poison','stun','taunt','blind','berserk','def_down','def_up','atk_up','sdm_up','marked','arcane_echo'];
+  const ORDER=['shinobi_haste','invisible','bleed','shift','divine_shield','guard','shield_redirect','premonition','counter','poison','stun','taunt','blind','berserk','def_down','def_up','atk_up','sdm_up','marked','arcane_echo'];
   const present = ORDER.filter(key=>hasStatus(u,key)); if(!present.length) return;
 
   const ICON_SIZE=Math.max(8, parseInt(window.STATUS_ICON_SIZE??24,10)||24);
   const padX=Math.max(4,Math.round(ICON_SIZE*0.25)); const lineH=Math.max(18, ICON_SIZE+2);
   const startX=ui.badgeStartX??ui.baseX, startY=ui.badgeY??(ui.baseY+62), maxW=ui.badgeMaxW??(scene.PANEL_W-(ui.baseX*2));
-  const labelFor=(key)=>(
-    key==='def_up'?'DEF↑': key==='def_down'?'DEF↓': key==='atk_up'?'ATK↑': key==='sdm_up'?'SDM↑':
-    key==='guard'?'GUARD': key==='divine_shield'?'Shield': key==='shield_redirect'?'Intercept':
-    key==='marked'?'Marked': key==='premonition'?'FAST': key==='counter'?'Counter': key==='arcane_echo'?'Echo':
-    key.charAt(0).toUpperCase()+key.slice(1)
-  );
+  const labelFor = (key) => (
+  key==='def_up'?'DEF↑' :
+  key==='def_down'?'DEF↓' :
+  key==='atk_up'?'ATK↑' :
+  key==='sdm_up'?'SDM↑' :
+  key==='guard'?'GUARD' :
+  key==='divine_shield'?'SHIELD' :
+  key==='shield_redirect'?'INTERCEPT' :
+  key==='marked'?'MARKED' :
+  key==='premonition'?'FAST' :
+  key==='counter'?'COUNTER' :
+  key==='arcane_echo'?'ECHO' :
+  // NEW SHORT LABELS
+  key==='shinobi_haste'?'HASTE' :
+  key==='invisible'?'INVIS' :
+  key==='shift'?'SHIFT' :
+  key==='bleed'?'BLEED' :
+  String(key || '').toUpperCase()
+);
+
 
   let used=0,line=0;
   for (const key of present){

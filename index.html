@@ -2640,28 +2640,35 @@ function ccDurBySDM(caster){
   return Math.min(cap, roll+bonus);
 }
 
-function applyHardCC(caster, target, key, dur, { data=null, showVFX=true } = {}){
+function applyHardCC(caster, target, key, dur, { data=null, showVFX=true } = {}) {
   if (!target) return false;
 
-  // MECHANICS (unchanged): apply status
-  if (data) pushStatus(target, { key, dur, data });
-  else      pushStatus(target, { key, dur });
+  // MECHANICS: apply status (SILENT so pushStatus won't do vfxStatus)
+  if (data) pushStatus(target, { key, dur, data }, { showVFX:false });
+  else      pushStatus(target, { key, dur },       { showVFX:false });
 
-  // COSMETIC ONLY: show unified hard-CC language
-  if (showVFX){
+  // Get final applied duration (handles CC extension / cap logic in pushStatus)
+  const appliedDur = (target.status?.find(s => s.key === key)?.dur | 0) || (dur|0);
+
+  if (showVFX) {
     try {
-      // Stagger the CC tag slightly so it doesn't collide with other pops
       const scene = getScene?.();
       const delay = (typeof vfxMs === 'function') ? vfxMs(60) : 60;
 
       const doVFX = () => {
-        // One consistent CC impact (purple)
+        // visuals only
         vfxHardCC?.(caster, target, key, { ms: 900, showOrigin: true });
 
-        // Optional extra: a short purple overlay to unify hard CC feel
-        if (typeof vfxFlashColor === 'function'){
-          vfxFlashColor(target, { color: (VFX?.CC_HEX ?? 0xb084ff), ms: (typeof vfxMs==='function'? vfxMs(260):260), alpha: 0.20 });
+        if (typeof vfxFlashColor === 'function') {
+          vfxFlashColor(target, {
+            color: (VFX?.CC_HEX ?? 0xb084ff),
+            ms: (typeof vfxMs==='function' ? vfxMs(260) : 260),
+            alpha: 0.20
+          });
         }
+
+        // SINGLE source of text (with duration)
+        vfxStatus?.(target, key, { dur: appliedDur, kind: 'cc' });
       };
 
       if (scene?.time?.delayedCall) scene.time.delayedCall(delay, doVFX);
@@ -2672,62 +2679,74 @@ function applyHardCC(caster, target, key, dur, { data=null, showVFX=true } = {})
   return true;
 }
 
-function applyHardCC_AOE(caster, targets, key, dur, { showVFX=true } = {}){
+function applyHardCC_AOE(caster, targets, key, dur, { showVFX=true } = {}) {
   const list = (targets || []).filter(t => t?.alive?.());
   if (!list.length) return 0;
 
-  // MECHANICS (unchanged): apply to everyone immediately
-  for (const t of list){
-    pushStatus(t, { key, dur });
+  // MECHANICS: apply to everyone immediately (SILENT)
+  for (const t of list) {
+    pushStatus(t, { key, dur }, { showVFX:false });
   }
 
-  // COSMETIC ONLY: origin + staggered impacts for readability
-  if (showVFX){
+  if (showVFX) {
     try {
+      // Keep projectiles, but DO NOT pass a label so vfxCastToTargets won't float text.
       vfxCastToTargets?.(caster, list, {
-        label: (VFX_TEXT?.[key] || String(key).toUpperCase()),
+        label: '', // important: disables label float text inside vfxCastToTargets
         proj: { ms: (VFX?.PROJ_MS ?? 750) * 0.85, color: (VFX?.CC_HEX ?? 0xb084ff), radius: 7 },
         onImpact: (t) => {
-          // showOrigin false because projectile already showed origin
           vfxHardCC?.(caster, t, key, { ms: 900, showOrigin: false });
+
+          const appliedDur = (t.status?.find(s => s.key === key)?.dur | 0) || (dur|0);
+          vfxStatus?.(t, key, { dur: appliedDur, kind: 'cc' });
         },
         staggerMs: (VFX?.AOE_STAGGER_MS ?? 150)
       });
+
+      // Optional: show caster cue once (since label is blank now)
+      // vfxActCue?.(caster, VFX_TEXT?.[key] || String(key).toUpperCase());
     } catch {}
   }
 
   return list.length;
 }
 
-function applyStatusWithLog(target, statusKey, dur, colorHex, text, caster=null){
-  pushStatus(target,{key:statusKey,dur});
+function applyStatusWithLog(target, statusKey, dur, colorHex, text, caster=null) {
+  // MECHANICS: apply status (SILENT so pushStatus won't do vfxStatus)
+  pushStatus(target, { key: statusKey, dur }, { showVFX:false });
+
+  // Get final applied duration (handles CC extension / cap logic in pushStatus)
+  const appliedDur = (target.status?.find(s => s.key === statusKey)?.dur | 0) || (dur|0);
 
   const msg = (text && text.includes('{dur}'))
-    ? text.replace('{dur}', dur)
-    : `${text || statusKey} (${dur} rounds).`;
+    ? text.replace('{dur}', appliedDur)
+    : `${text || statusKey} (${appliedDur} rounds).`;
 
-  const logCol = (statusKey === 'stun' || statusKey === 'blind' || statusKey === 'taunt' || statusKey === 'berserk')
-  ? (VFX_COL?.cc || '#b084ff')
-  : colorHex;
+  const logCol =
+    (statusKey === 'stun' || statusKey === 'blind' || statusKey === 'taunt' || statusKey === 'berserk')
+      ? (VFX_COL?.cc || '#b084ff')
+      : colorHex;
 
-appendLogHTML(`<span style="color:${logCol}">${msg}</span>`);
+  appendLogHTML(`<span style="color:${logCol}">${msg}</span>`);
 
-  // --- COSMETIC ONLY: unified hard CC language (purple) ---
+  // COSMETIC ONLY
   try {
-    // Only treat these as "hard CC" for the shared purple language:
-    if (statusKey === 'stun' || statusKey === 'blind' || statusKey === 'taunt' || statusKey === 'berserk'){
-     const scene = getScene?.();
-const d = vfxMs?.(120) ?? 120;
-if (scene?.time?.delayedCall) scene.time.delayedCall(d, () => vfxHardCC?.(caster, target, statusKey, { ms: 900, showOrigin: true }));
-else vfxHardCC?.(caster, target, statusKey, { ms: 900, showOrigin: true });
+    if (statusKey === 'stun' || statusKey === 'blind' || statusKey === 'taunt' || statusKey === 'berserk') {
+      // visuals
+      const scene = getScene?.();
+      const d = vfxMs?.(120) ?? 120;
+      const run = () => vfxHardCC?.(caster, target, statusKey, { ms: 1250, showOrigin: true });
+      if (scene?.time?.delayedCall) scene.time.delayedCall(d, run);
+      else run();
 
+      // SINGLE source of text
+      vfxStatus?.(target, statusKey, { dur: appliedDur, kind: 'cc' });
     } else {
-      // non-hard statuses still get your normal status pop
-      vfxStatus?.(target, statusKey, { dur, kind:'debuff' });
+      vfxStatus?.(target, statusKey, { dur: appliedDur, kind: 'debuff' });
     }
   } catch {}
 
-  return dur;
+  return appliedDur;
 }
 
 /* ---------- deterministic picks (no RNG before seeding) ---------- */

@@ -375,7 +375,7 @@ const choice=(arr)=> arr[(rand()*arr.length)|0];
 
 /* ---------- config ---------- */
 const CONFIG = {
-  BASE_HP: 54, HP_PER_TGH: 23,
+  BASE_HP: 55, HP_PER_TGH: 24,
   ATK_PER_STR: 1.5, SDM_PER_INT: 1.5,
   DEF_FROM_TGH: 0.75, DEF_FROM_QKN: 0.75,
 
@@ -387,10 +387,10 @@ const CONFIG = {
 
   SHRUG_BASE: 0.05, SHRUG_TGH_FACTOR: 0.0025,
 
-  BUFF_BASE_MIN: 2, BUFF_BASE_MAX: 4, BUFF_SDM_PER_BONUS: 15, BUFF_MAX_CAP: 6,
+  BUFF_BASE_MIN: 3, BUFF_BASE_MAX: 4, BUFF_SDM_PER_BONUS: 15, BUFF_MAX_CAP: 6,
 
   PROC: {
-    Cleric: { chance: 0.5 }, Mage: { chance: 0.5 }, Monk: { chance: 0.75 },
+    Cleric: { chance: 0.5 }, Mage: { chance: 0.5 }, Monk: { chance: 0.66 },
     Mystic: { chance: 0.5 }, Necromancer: { chance: 0.5 }, Paladin: { chance: 0.5 },
   },
 
@@ -502,7 +502,7 @@ __setWithVariants('mag',  'Premonition',   {proc:false});  // status only; type 
 const ALL_CLASSES = ['Shinobi','Warrior','Barbarian','Electromancer','Rogue','Cleric','Mage','Paladin','Archer','Monk','Necromancer','Mystic'];
 const JOBS = {
   Warrior:  { STR:26,QKN:16,INT:8, TGH:36, kind:'phys', name:'Warrior' },
-  Shinobi:  { STR:24,QKN:26,INT:10, TGH:25, kind:'phys', name:'Shinobi' },
+  Shinobi:  { STR:24,QKN:24,INT:10, TGH:26, kind:'phys', name:'Shinobi' },
   Electromancer: { STR:10,QKN:15,INT:32, TGH:25, kind:'mag', name:'Electromancer' },
   Rogue:    { STR:22,QKN:30,INT:8,TGH:27,  kind:'phys', name:'Rogue' },
   Cleric:   { STR:7, QKN:18,INT:28,TGH:29, kind:'mag',  name:'Cleric' },
@@ -527,7 +527,10 @@ function makeUnit(jobName, team){
   const u = new Unit(jobName, team, jobName);
   u.maxHP = d.HP; u.hp = d.HP;
   u.ATK = d.ATK; u.SDM = d.SDM; u.DEF = d.DEF; u.CRIT = d.CRIT;
+  u.QKN = job.QKN;                
   return u;
+}
+
 }
 class Unit{
   constructor(name, team, jobName){
@@ -539,6 +542,7 @@ class Unit{
     this.maxHP = d.HP; this.hp = d.HP;
     this.ATK = d.ATK; this.SDM = d.SDM; this.DEF = d.DEF;
     this.CRIT = d.CRIT;
+    this.QKN = job.QKN; 
     this.status = [];
     this._ui = null;
   }
@@ -666,8 +670,8 @@ case 'Electromancer': return [
   desc: 'Zap enemies and energize allies. Small chance to disorient enemies.',
   speed: 'fast', type: 'mag', target: 'all-enemies',
 
-  base: { min: 4, max: 10 }, statCoef: 0.25,
-  heal: { min: 4, max: 10 }, healCoef: 0.18, scalesWith: 'SDM',
+  base: { min: 4, max: 6 }, statCoef: 0.25,
+  heal: { min: 4, max: 6 }, healCoef: 0.18, scalesWith: 'SDM',
 
   stunChance: 0.15,
 
@@ -712,7 +716,7 @@ case 'Electromancer': return [
   label: 'Chain Lightning',
   desc: 'Massive damage. 65% chance to jump to a new random target (any team), repeating.',
   speed: 'normal', type: 'mag', target: 'enemy',
-  base: { min: 75, max: 125 }, statCoef: 0.65,
+  base: { min: 85, max: 125 }, statCoef: 0.65,
   bounceChance: 0.65,
 
   use: async function(a, first){
@@ -1227,7 +1231,7 @@ case 'Warrior': return [
          appendLog(`All enemies’ defense is reduced (${dur}).`); } },
 
      {label:'Smash', desc:'Crushing blow with chance to stun.', speed:'slow', type:'phys', target:'enemy',
- base:{min:70,max:110}, statCoef:0.55,
+ base:{min:70,max:115}, statCoef:0.55,
  use:function(a,t){
    const r=hit(a,t,{ability:this});
    if(t.alive() && rand()<0.25){
@@ -2061,29 +2065,49 @@ a._rezUsed = true;
 
     /* ===== Mystic ===== */
     case 'Mystic': return [
-      {label:'Stun', desc:'Quickly stun your foe. 45% chance success.', speed:'fast', type:'mag', target:'enemy',
-       use:(a,t)=>{
-     if(rand()<0.45){
-     const dur=ccDurBySDM(a);
-     applyStatusWithLog(t,'stun',dur,'#b084ff',`${a.name} stuns ${t.name} for {dur} rounds!`, a);
-      } else {
+     {label:'Stun', desc:'Quickly stun your foe. 45% chance success.', speed:'fast', type:'mag', target:'enemy',
+  use:(a,t)=>{
+    if (!t?.alive?.()) return;
+
+    // Always show that the spell was attempted (projectile + cue)
+    vfxTryCastCC?.(a, t, 'stun');
+
+    if (rand() < 0.45){
+      const dur = ccDurBySDM(a);
+      applyStatusWithLog(t, 'stun', dur, '#b084ff', `${a.name} stuns ${t.name} for {dur} rounds!`, a);
+    } else {
       appendLog(`${a.name}'s Stun fails to take hold.`);
-     }
- }},
+
+      // Optional: feedback on failure (purely cosmetic)
+      vfxFlashColor?.(t, { color: 0xffffff, ms: vfxMs?.(180) ?? 180, alpha: 0.10 });
+      vfxFloatText?.(t, 'RESIST', { fontSize: 14, ms: vfxMs?.(650) ?? 650, color: '#d0d0d0' });
+    }
+  }
+},
 
       {label:'Attack', desc:'Throwing dagger attack which can find weak spots.', speed:'normal', type:'phys', target:'enemy',
        base:{min:25,max:35}, scalesWith:'SDM', statCoef:0.40, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
-      {label:'Berserk', desc:'Target attacks at random. 45% chance success.', speed:'normal', type:'mag', target:'enemy',
- use:(a,t)=>{
-   if(rand()<0.45){
-     const dur=ccDurBySDM(a);
-     applyStatusWithLog(t,'berserk',dur,'#b084ff',`${a.name} drives ${t.name} absolutely berserk for {dur} rounds!`, a);
-   } else {
-     appendLog(`${a.name}'s Berserk fails to take hold.`);
-   }
- }},
+     {label:'Berserk', desc:'Target attacks at random. 45% chance success.', speed:'normal', type:'mag', target:'enemy',
+  use:(a,t)=>{
+    if (!t?.alive?.()) return;
+
+    // Always show that the spell was attempted (projectile + cue)
+    vfxTryCastCC?.(a, t, 'berserk');
+
+    if (rand() < 0.45){
+      const dur = ccDurBySDM(a);
+      applyStatusWithLog(t, 'berserk', dur, '#b084ff', `${a.name} drives ${t.name} absolutely berserk for {dur} rounds!`, a);
+    } else {
+      appendLog(`${a.name}'s Berserk fails to take hold.`);
+
+      // Optional: feedback on failure (purely cosmetic)
+      vfxFlashColor?.(t, { color: 0xffffff, ms: vfxMs?.(180) ?? 180, alpha: 0.10 });
+      vfxFloatText?.(t, 'RESIST', { fontSize: 14, ms: vfxMs?.(650) ?? 650, color: '#d0d0d0' });
+    }
+  }
+},
 
       {label:'Mental Breakdown', desc:'Crushing psychic blow.', speed:'slow', type:'mag', target:'enemy',
        base:{min:60,max:120}, scalesWith:'SDM', statCoef:0.55,
@@ -3100,7 +3124,10 @@ ui._statusTip ||= scene.add.text(0, 0, '', {
 .setVisible(false);
 
   const effATK=u.ATK*atkMult(u), effSDM=u.SDM*sdmMult(u), effDEF=u.DEF*defMult(u);
-  ui.statsTxt.setText(`ATK ${effATK.toFixed(1)}  •  SDM ${effSDM.toFixed(1)}  •  DEF ${effDEF.toFixed(1)}`);
+  const effQKN = (u.QKN ?? JOBS?.[u.job]?.QKN ?? 0) * (qknMult?.(u) ?? 1);
+ui.statsTxt.setText(
+  `ATK ${effATK.toFixed(1)}  •  SDM ${effSDM.toFixed(1)}  •  DEF ${effDEF.toFixed(1)}  •  QKN ${effQKN}`
+);
 
   ui.statusNodes ||= []; for (const n of ui.statusNodes) n.destroy(); ui.statusNodes.length=0;
 
@@ -3539,6 +3566,23 @@ if (hadBerserk && !hasStatus(u, 'berserk')){
   }
 }
 
+function vfxTryCastCC(caster, target, key, { ms=null, showOrigin=true } = {}) {
+  if (!caster || !target) return;
+  const hex = (VFX?.CC_HEX ?? 0xb084ff);
+
+  // show caster cue (spell name)
+  vfxActCue?.(caster, VFX_TEXT?.[key] || String(key||'SPELL').toUpperCase());
+
+  // always show projectile to indicate attempt
+  if (showOrigin) {
+    vfxProjectile?.(caster, target, {
+      ms: vfxMs?.(ms ?? ((VFX?.PROJ_MS ?? 750) * 0.90)) ?? (ms ?? ((VFX?.PROJ_MS ?? 750) * 0.90)),
+      color: hex,
+      radius: Math.floor((typeof vfxScale === 'function' ? vfxScale(6) : 6))
+    });
+  }
+}
+
 function vfxHardCC(caster, target, key, { ms=900, showOrigin=true, showText=false } = {}) {
   if (!target) return;
 
@@ -3677,7 +3721,7 @@ const VFX = {
   ACT_FLASH_MS: 500,
 
   // Global knobs (COSMETIC ONLY)
-  TIME_SCALE: 1.75,
+  TIME_SCALE: 1.85,
   GLOBAL_SCALE: 1.20,
   AOE_STAGGER_MS: 150,
   STATUS_TO_HEAL_MS: 125,
@@ -4970,7 +5014,7 @@ function resizePhaserToBattlefield(){ if(!game||!game.scale) return; const s=siz
 
 window.addEventListener('load', ()=>{
   window.SPRITE_BASE_URL=window.SPRITE_BASE_URL||'https://raw.githubusercontent.com/krezt/tol-assets/main';
-  window.ARENA_BG_URL   =window.ARENA_BG_URL   ||'https://raw.githubusercontent.com/krezt/tol-assets/refs/heads/main/bg/arena_bg3.png';
+  window.ARENA_BG_URL   =window.ARENA_BG_URL   ||'https://raw.githubusercontent.com/krezt/tol-assets/refs/heads/main/bg/arena_bg5.png';
 
   initActionBarShell();
   bootPhaser();

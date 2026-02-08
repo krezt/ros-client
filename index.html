@@ -512,7 +512,7 @@ const JOBS = {
   Archer:   { STR:22,QKN:25,INT:8, TGH:25, kind:'phys', name:'Archer' },
   Monk:     { STR:24,QKN:28,INT:8, TGH:25, kind:'phys', name:'Monk' },
   Necromancer:{STR:7,QKN:14, INT:34,TGH:27, kind:'mag',  name:'Necromancer' },
-  Mystic:   { STR:8, QKN:26,INT:31,TGH:24, kind:'mag',  name:'Mystic' }
+  Mystic:   { STR:8, QKN:27,INT:31,TGH:24, kind:'mag',  name:'Mystic' }
 };
 function deriveStats(job){
   const HP  = CONFIG.BASE_HP + job.TGH*CONFIG.HP_PER_TGH;
@@ -641,11 +641,11 @@ case 'Electromancer': return [
   /* 1) Attack (fast) — small chance to stun (dur 1) */
   {
     label: 'Attack',
-    desc: 'Fast spark. Small chance to stun (1 round).',
-    speed: 'fast', type: 'mag', target: 'enemy',
-    base: { min: 18, max: 28 }, statCoef: 0.35, isBasic: true,
+    desc: 'Electric shock. Small chance to stun 2 rounds with physical attack.',
+    speed: 'fast', type: 'phys', target: 'enemy',
+    base: { min: 18, max: 28 }, statCoef: 0.45, isBasic: true,
 
-    stunChance: 0.12,
+    stunChance: 0.15,
 
     use: function(a, t){
       if (!t || !t.alive()) return;
@@ -654,8 +654,8 @@ case 'Electromancer': return [
       hit(a, t, { ability: this });
 
       if (t.alive() && chance(this.stunChance)){
-        pushStatus(t, { key:'stun', dur: 1 });
-        appendLogHTML?.(`<span style="color:${VFX_COL?.cc || '#b084ff'}">⚡ ${t.name} is stunned (1)!</span>`);
+        pushStatus(t, { key:'stun', dur: 2 });
+        appendLogHTML?.(`<span style="color:${VFX_COL?.cc || '#b084ff'}">⚡ ${t.name} is stunned!</span>`);
       }
     }
   },
@@ -663,11 +663,11 @@ case 'Electromancer': return [
   /* 2) Electrical Storm (fast) — AoE chip + AoE heal + small chance to stun enemies (dur 1) */
   {
   label: 'Electrical Storm',
-  desc: 'Zap enemies and energize allies. Small chance to stun enemies (1).',
+  desc: 'Zap enemies and energize allies. Small chance to disorient enemies.',
   speed: 'fast', type: 'mag', target: 'all-enemies',
 
-  base: { min: 10, max: 16 }, statCoef: 0.25,
-  heal: { min: 8, max: 14 }, healCoef: 0.18, scalesWith: 'SDM',
+  base: { min: 4, max: 10 }, statCoef: 0.25,
+  heal: { min: 4, max: 10 }, healCoef: 0.18, scalesWith: 'SDM',
 
   stunChance: 0.15,
 
@@ -712,7 +712,7 @@ case 'Electromancer': return [
   label: 'Chain Lightning',
   desc: 'Massive damage. 65% chance to jump to a new random target (any team), repeating.',
   speed: 'normal', type: 'mag', target: 'enemy',
-  base: { min: 75, max: 115 }, statCoef: 0.65,
+  base: { min: 75, max: 125 }, statCoef: 0.65,
   bounceChance: 0.65,
 
   use: async function(a, first){
@@ -839,7 +839,7 @@ const removed = beforeN - a.status.length;
   */
   {
     label: 'Shift',
-    desc: 'On cast and one additional round, dodge all physical attacks.',
+    desc: 'On cast and one additional round, dodge all physical type attacks.',
     speed: 'normal', type: 'mag', target: 'self',
 
     use: function(a){
@@ -892,7 +892,7 @@ case 'Shinobi': return [
     label: 'Attack',
     desc: 'Fast strike. Chance to double strike.',
     speed: 'fast', type: 'phys', target: 'enemy',
-    base: { min: 24, max: 44 }, statCoef: 0.45, isBasic: true,
+    base: { min: 35, max: 60 }, statCoef: 0.45, isBasic: true,
 
     procChance: 0.55,
 
@@ -984,7 +984,7 @@ case 'Shinobi': return [
   /* 3) Invisibility (normal) — untargetable for 2 rounds */
   {
     label: 'Invisibility',
-    desc: 'Become untargetable for 2 rounds (AoE/berserk can still hit).',
+    desc: 'Become untargetable from cast and also next round (AoE/berserk can still hit).',
     speed: 'normal', type: 'mag', target: 'self',
     use: function(a){
       const dur = 2;
@@ -1002,7 +1002,7 @@ case 'Shinobi': return [
   /* 4) Bleed (medium) — apply status; tick handled by endRoundTick patch */
   {
     label: 'Bleed',
-    desc: 'Strike and inflict Bleed: 15% current HP at end of round for 3 rounds.',
+    desc: 'Strike and inflict Bleed: 15% current HP at end of round for 4 rounds.',
     speed: 'medium', type: 'phys', target: 'enemy',
     base: { min: 22, max: 36 }, statCoef: 0.45,
     pct: 0.15,
@@ -1018,7 +1018,7 @@ case 'Shinobi': return [
   // If dodged OR dealt no damage, do NOT apply bleed
   if (r?.dodged || (r?.dealt|0) <= 0) return;
 
-  const dur = 3;
+  const dur = 4;
   removeStatusKey(t, 'bleed');
   pushStatus(t, { key:'bleed', dur, data:{ pct:this.pct ?? 0.15, src:a?.name } });
 
@@ -1027,12 +1027,12 @@ case 'Shinobi': return [
 
   },
 
-  /* 5) Potion of Regeneration (fast) — 2 uses; heal 30-40%; cure poison */
+  /* 5) Potion of Regeneration (fast) — 3 uses; heal 30-40%; cure poison */
   {
     label: 'Regeneration Potion',
-    desc: 'Heal 25–35% max HP and cure poison (2 uses).',
+    desc: 'Heal 25–35% max HP and cure poison (3 uses).',
     speed: 'fast', type: 'mag', target: 'self',
-    usesMax: 2,
+    usesMax: 3,
     usesKey: 'potion_regen',
     usesSpendInUse: true,
     pctMin: 0.30,
@@ -1139,7 +1139,7 @@ if ((this.usesMax|0) > 0 && !spendUse(a, this)) {
     /* ===== Warrior ===== */
 case 'Warrior': return [
   {label:'Attack', desc:'Good old sword and board.', speed:'normal', type:'phys', target:'enemy',
-   base:{min:55,max:75}, statCoef:0.35, isBasic:true,
+   base:{min:65,max:75}, statCoef:0.35, isBasic:true,
    use:function(a,t){ return hit(a,t,{ability:this}); } },
 
 {
@@ -1182,7 +1182,7 @@ case 'Warrior': return [
 
 
   {label:'Power Strike', desc:'Slow, potentially heavy blow.', speed:'slow', type:'phys', target:'enemy',
-   base:{min:75,max:120}, statCoef:0.60,
+   base:{min:80,max:140}, statCoef:0.60,
    use:function(a,t){ return hit(a,t,{ability:this}); } },
 
   {label:'Insult', desc:'Taunt an enemy into attacking you.', speed:'normal', type:'phys', target:'enemy',
@@ -1212,11 +1212,11 @@ case 'Warrior': return [
     /* ===== Barbarian ===== */
     case 'Barbarian': return [
       {label:'Attack', desc:'A consistently strong basic attack.', speed:'normal', type:'phys', target:'enemy',
-       base:{min:65,max:80}, statCoef:0.40, isBasic:true,
+       base:{min:70,max:90}, statCoef:0.40, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Rend', desc:'Expose your target’s weakness.', speed:'slow', type:'phys', target:'enemy',
-       base:{min:60,max:120}, statCoef:0.35,
+       base:{min:70,max:120}, statCoef:0.35,
        use:function(a,t){ const r=hit(a,t,{ability:this});
          if(t.alive()){ const dur=buffDurBySDM(a); pushStatus(t,{key:'def_down', dur}); appendLog(`${t.name}’s defense is lowered (${dur}).`);} return r; } },
 
@@ -1227,7 +1227,7 @@ case 'Warrior': return [
          appendLog(`All enemies’ defense is reduced (${dur}).`); } },
 
      {label:'Smash', desc:'Crushing blow with chance to stun.', speed:'slow', type:'phys', target:'enemy',
- base:{min:60,max:110}, statCoef:0.55,
+ base:{min:70,max:110}, statCoef:0.55,
  use:function(a,t){
    const r=hit(a,t,{ability:this});
    if(t.alive() && rand()<0.25){
@@ -1690,7 +1690,7 @@ a._rezUsed = true;
     /* ===== Monk ===== */
     case 'Monk': return [
       {label:'Flurry', desc:'Three successive strikes.', speed:'slow', type:'phys', target:'enemy',
-       base:{min:35,max:65}, statCoef:0.25,
+       base:{min:55,max:75}, statCoef:0.35,
        use:function(a,t){ for(let i=1;i<=3;i++){ if(!t.alive()) break;
          a._usingAbilityLabel = `Flurry (${i}/3)`; hit(a,t,{ability:this}); a._usingAbilityLabel = undefined; } } },
 
@@ -1704,7 +1704,7 @@ a._rezUsed = true;
          appendLog(count ? `A Chi Wave rips accross the battlefield. Negative effects washed away from ${count} allies.` : `No negative effects to cleanse.`); } },
 
       {label:'Palm Hit', desc:'Body blow that may stagger foes.', speed:'normal', type:'phys', target:'enemy',
- base:{min:30,max:40}, statCoef:0.30,
+ base:{min:35,max:45}, statCoef:0.4,
  use:function(a,t){
    const r=hit(a,t,{ability:this});
    if(t.alive() && rand()<0.33){
@@ -2061,7 +2061,7 @@ a._rezUsed = true;
 
     /* ===== Mystic ===== */
     case 'Mystic': return [
-      {label:'Stun', desc:'Quickly stun your foe. 40% success.', speed:'fast', type:'mag', target:'enemy',
+      {label:'Stun', desc:'Quickly stun your foe. 45% chance success.', speed:'fast', type:'mag', target:'enemy',
        use:(a,t)=>{
      if(rand()<0.45){
      const dur=ccDurBySDM(a);
@@ -2071,11 +2071,11 @@ a._rezUsed = true;
      }
  }},
 
-      {label:'Attack', desc:'Throwing dagger attack which can find weak spots.', speed:'normal', type:'mag', target:'enemy',
-       base:{min:20,max:25}, scalesWith:'SDM', statCoef:0.40, isBasic:true,
+      {label:'Attack', desc:'Throwing dagger attack which can find weak spots.', speed:'normal', type:'phys', target:'enemy',
+       base:{min:25,max:35}, scalesWith:'SDM', statCoef:0.40, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
-      {label:'Berserk', desc:'Target loses control; will attack anyone. 45% success.', speed:'normal', type:'mag', target:'enemy',
+      {label:'Berserk', desc:'Target attacks at random. 45% chance success.', speed:'normal', type:'mag', target:'enemy',
  use:(a,t)=>{
    if(rand()<0.45){
      const dur=ccDurBySDM(a);
@@ -2086,12 +2086,12 @@ a._rezUsed = true;
  }},
 
       {label:'Mental Breakdown', desc:'Crushing psychic blow.', speed:'slow', type:'mag', target:'enemy',
-       base:{min:60,max:110}, scalesWith:'SDM', statCoef:0.55,
+       base:{min:60,max:120}, scalesWith:'SDM', statCoef:0.55,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
-      {label:'Premonition', desc:'All ally actions become fast next round.', speed:'fast', type:'mag', target:'all-allies',
-       use:(a,arr)=>{ for (const ally of arr){ if(ally.alive()) pushStatus(ally,{key:'premonition', dur:2}); }
-         appendLogHTML(`${a.name} invokes <b>Premonition</b> — your party acts fast next round.`); } }
+      {label:'Premonition', desc:'All ally actions become fast next two rounds.', speed:'fast', type:'mag', target:'all-allies',
+       use:(a,arr)=>{ for (const ally of arr){ if(ally.alive()) pushStatus(ally,{key:'premonition', dur:3}); }
+         appendLogHTML(`${a.name} invokes <b>Premonition</b> — your party acts fast next 2 rounds.`); } }
     ];
 
     default:

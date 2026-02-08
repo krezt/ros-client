@@ -4871,6 +4871,19 @@ function assignNetIds(){
   guestUnits.forEach((u,i) => u.netId = `G${i}`);
 }
 
+function resetAbilityUsesForBattle(units){
+  for (const u of (units || [])) {
+    if (!u) continue;
+    // new system
+    u._abilityUses = {};
+    // clear legacy flags/counters (safe)
+    delete u._godTempestUsed;
+    delete u._shinobiPotionUses;
+    delete u._rezUsed;
+  }
+}
+window.resetAbilityUsesForBattle = resetAbilityUsesForBattle;
+
 function startBattleFromDraft(){
   ensureRoundBuf();
 

@@ -3123,8 +3123,6 @@ function tryShrug(u, key){
   vfxFlashColor?.(u, { color: 0x7ad7ff, ms: (typeof vfxMs==='function'? vfxMs(220):220), alpha: 0.18 });
   vfxFloatText?.(u, `SHRUG ${label}`, { ms: vfxMs?.(1500) ?? 900, fontSize: 16, color: (VFX_COL?.dodge || '#7ad7ff') });
 
-  });
-
   return true;
 }
 

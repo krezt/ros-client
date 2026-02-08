@@ -763,6 +763,7 @@ case 'Electromancer': return [
     speed: 'normal', type: 'mag', target: 'self',
     usesMax: 1,
     usesKey: 'god_tempest',
+    usesSpendInUse: true,
     sdmDur: 4,
     defDur: 4,
 
@@ -774,15 +775,12 @@ if (a._godTempestUsed) {
   return;
 }
 
-// If resolveSimultaneous already spent the use, left will be 0 here after first cast.
-// But keep a local safety gate too:
-if ((this.usesMax|0) > 0 && getUsesLeft(a, this) <= 0) {
+// Spend the one use here (single source of truth)
+if ((this.usesMax|0) > 0 && !spendUse(a, this)) {
   appendLog(`${a.name} has already used God Tempest.`);
   return;
 }
 
-// mirror old flag for safety
-a._godTempestUsed = true;
 
       // ---- CLEANSE ALL NEGATIVES ----
       // Your engine doesn't tag statuses with "kind", so we need an explicit list.
@@ -991,28 +989,23 @@ case 'Shinobi': return [
 
   /* 5) Potion of Regeneration (fast) — 2 uses; heal 30-40%; cure poison */
   {
-    label: 'Potion of Regeneration',
+    label: 'Regeneration Potion',
     desc: 'Heal 25–35% max HP and cure poison (2 uses).',
     speed: 'fast', type: 'mag', target: 'self',
     usesMax: 2,
     usesKey: 'potion_regen',
+    usesSpendInUse: true,
     pctMin: 0.30,
     pctMax: 0.40,
 
     use: function(a){
       if (!a) return;
 
-      // Backward compatible mirror
-if (typeof a._shinobiPotionUses !== 'number') a._shinobiPotionUses = 0;
-
-// Resolve-time should spend automatically, but keep a safety gate:
-if ((this.usesMax|0) > 0 && getUsesLeft(a, this) <= 0) {
+     
+if ((this.usesMax|0) > 0 && !spendUse(a, this)) {
   appendLog(`${a.name} has no Potions of Regeneration left.`);
   return;
 }
-
-// Mirror legacy counter for now (optional, but safe)
-a._shinobiPotionUses = Math.min(this.usesMax|0, a._shinobiPotionUses + 1);
 
       removeStatusKey(a, 'poison');
 
@@ -1030,8 +1023,9 @@ a._shinobiPotionUses = Math.min(this.usesMax|0, a._shinobiPotionUses + 1);
       vfxFlashColor?.(a, { color: 0x57ff7a, ms: vfxMs(320), alpha: 0.22 });
       if (healed > 0) vfxHealImpact?.(a, a, healed, this.label);
       vfxFloatText?.(a, `POTION (${getUsesLeft(a, this)} left)`, {
-        ms: vfxMs(1200), fontSize: Math.floor(vfxScale(13)), color: (VFX_COL?.buff || '#a7c4ff')
-      });
+  ms: vfxMs(1200), fontSize: 13, color: (VFX_COL?.buff || '#a7c4ff')
+});
+
 
       appendLogHTML?.(`<span style="color:#9dffb3">🧪 ${a.name} drinks a potion and heals ${healed}.</span>`);
     }
@@ -1431,6 +1425,7 @@ if (wasPoisoned){
   usesMax: 1,
 usesKey: 'resurrection',
 usesConsumesOn: 'revive', // only spend the “charge” when reviving a dead ally
+usesSpendInUse: true,
 allowDeadTarget: true,
 
   // Optional: keep heal numbers on the ability so you can reuse `this`
@@ -1442,10 +1437,11 @@ allowDeadTarget: true,
     // One-time revive gate
     if (!t.alive?.()) {
   // revive attempt consumes the limited use
-  if ((this.usesMax|0) > 0 && getUsesLeft(a, this) <= 0) {
-    appendLog(`${a.name} has already used Resurrection.`);
-    return;
-  }
+  if ((this.usesMax|0) > 0 && !spendUse(a, this)) {
+  appendLog(`${a.name} has already used Resurrection.`);
+  return;
+}
+
 }
 
     // If alive: treat as a normal heal using THIS ability's heal stats
@@ -3931,8 +3927,6 @@ if (ability?.label === 'Dispel') {
 const usesMax = ability?.usesMax | 0;
 if (usesMax > 0) {
   const left = getUsesLeft(actor, ability);
-
-  // Special case: some abilities only consume on certain outcomes (e.g. Resurrection)
   const consumesOn = ability?.usesConsumesOn || 'cast';
 
   if (left <= 0) {
@@ -3941,11 +3935,13 @@ if (usesMax > 0) {
     continue;
   }
 
-  // Default: consume on cast (most abilities)
-  if (consumesOn === 'cast') {
+  // IMPORTANT: only auto-spend for abilities that do NOT manage spending themselves
+  // We'll spend inside the ability for your current 3 (God Tempest, Potion, Resurrection).
+  if (consumesOn === 'cast' && !ability.usesSpendInUse) {
     spendUse(actor, ability);
   }
 }
+
 
 const doInvoke = async () => (
   typeof ability.use === 'function'
@@ -4888,9 +4884,9 @@ function startBattleFromDraft(){
   player = (Array.isArray(PVP.picksMe) ? PVP.picksMe : []).map(job => makeUnit(job, 'player'));
   enemy  = (Array.isArray(PVP.picksOpp) ? PVP.picksOpp : []).map(job => makeUnit(job, 'enemy'));
   ensureUnitSides();  // label units as host/guest before scene restart
+resetAbilityUsesForBattle(player);
+resetAbilityUsesForBattle(enemy);
 assignNetIds(); // assigns netId based on current role
-
-
 
   PVP.phase = 'battle';
   PVP._readyForBattle = true; // flag for Scene.create to know we're in battle state

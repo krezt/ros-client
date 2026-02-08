@@ -2176,6 +2176,12 @@ function vfxFloatText(u, text, { ms=900, fontSize=22, color=null, stroke='#00000
   // Normalize
   let s = String(text ?? '');
 
+  // DEBUG: identify who is creating STUN/TAUNT pops
+  if (/^(STUN|TAUNT)\b/i.test(s)) {
+    console.log('[VFX DEBUG floatText]', s, 'on', u?.name || u);
+    console.trace();
+  }
+
   // --- COSMETIC ONLY: prevent identical text popping twice instantly on same unit ---
   const now = (scene.time && typeof scene.time.now === 'number') ? scene.time.now : Date.now();
   const k = s;

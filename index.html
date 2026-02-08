@@ -1524,7 +1524,7 @@ a._rezUsed = true;
 
     // VFX (optional)
     vfxActCue?.(a, this.label);
-    vfxResurrect?.(t); // if you add one later, otherwise this is harmless
+    if (typeof vfxResurrect === 'function') vfxResurrect(t);
     vfxFlashColor?.(t, { color: 0xa7c4ff, ms: 650, alpha: 0.25 });
     vfxFloatText?.(t, `REVIVE ${reviveHP}`, { ms: 1500, fontSize: 22 });
 
@@ -3105,6 +3105,26 @@ ui._statusTip ||= scene.add.text(0, 0, '', {
   String(key || '').toUpperCase()
 );
 
+const statusTipFor = (key, u) => {
+  // u is optional if you ever want dynamic text (stacks, values, etc.)
+  switch (key) {
+    case 'shift': return 'Shift: Cannot be targeted with physical.';
+    case 'stun': return 'Stun: Cannot act.';
+    case 'poison': return 'Poison: Takes damage each round.';
+    case 'bleed': return 'Bleed: Takes physical % damage each round.';
+    case 'berserk': return 'Berserk: Attack randomly.';
+    case 'invisible': return 'Invisible: Targeted attacks miss.';
+
+    case 'def_up': return 'DEF Up: Takes less damage.';
+    case 'def_down': return 'DEF Down: Takes more damage.';
+    case 'atk_up': return 'ATK Up: Deals more physical damage.';
+    case 'sdm_up': return 'SDM Up: Deals more spell damage.';
+
+    // fallback: just show the name if you haven't written a description yet
+    default: return labelFor(key);
+  }
+};
+
 
   let used = 0, line = 0;
 for (const key of present) {
@@ -3137,7 +3157,7 @@ for (const key of present) {
   node.setInteractive({ useHandCursor: true });
 
   node.on('pointerover', (pointer) => {
-    ui._statusTip.setText(labelFor(key));
+    ui._statusTip.setText(statusTipFor(key, u));
     ui._statusTip.setVisible(true);
 
     // follow mouse

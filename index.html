@@ -897,42 +897,70 @@ case 'Shinobi': return [
     procChance: 0.55,
 
     use: function(a, t){
-      if (!t || !t.alive()) return;
+  if (!t || !t.alive?.()) return;
 
-      const hasteOn = hasStatus(a, 'shinobi_haste');
-      const swings = 1 + (hasteOn ? 1 : 0);
+  const hasteOn = hasStatus(a, 'shinobi_haste');
+  const swings = 1 + (hasteOn ? 1 : 0);
 
-      // One clear caster cue
-      vfxActCue?.(a, this.label);
+  vfxActCue?.(a, this.label);
+  vfxProjectile?.(a, t, { ms: 220, color: 0xc9c9ff, radius: 4 });
 
-      // Optional: one tiny travel cue per action (NOT per hit)
-      vfxProjectile?.(a, t, { ms: 220, color: 0xc9c9ff, radius: 4 });
+  let hits = 0;
+  let procHits = 0;
 
-      let hits = 0;
-      let doubleProcs = 0;
+  const scene = getScene?.();
+  const hitGap = (typeof vfxMs === 'function') ? vfxMs(110) : 110; // tiny spacing between hit VFX
 
-      for (let i = 0; i < swings; i++){
-        if (!t.alive()) break;
+  // Pre-roll proc outcomes deterministically (still uses your rand/chance in order)
+  const plan = [];
+  for (let i = 0; i < swings; i++){
+    plan.push({ kind: 'base' });
+    // proc check happens after base hit, same as your logic
+    plan.push({ kind: 'proc', do: chance(this.procChance) });
+  }
 
-        hit(a, t, { ability: this });
-        hits++;
+  // Execute immediately for mechanics, but schedule "impact feel" callouts
+  // IMPORTANT: hit() should already be doing the actual damage+numbers.
+  // We're only spacing out the FEEL and combo tag.
+  let stepIndex = 0;
 
-        if (t.alive() && chance(this.procChance)){
-          hit(a, t, { ability: this });
-          hits++;
-          doubleProcs++;
-        }
-      }
+  for (let i = 0; i < swings; i++){
+    if (!t.alive?.()) break;
 
-      // One punchy callout if ANY proc happened
-      if (doubleProcs > 0){
-        vfxFloatText?.(t, `COMBO!`, { ms: vfxMs(1250), fontSize: Math.floor(vfxScale(16)), color: '#c9c9ff' });
-        vfxFlashColor?.(t, { color: 0xc9c9ff, ms: vfxMs(220), alpha: 0.18 });
-      }
+    hit(a, t, { ability: this });
+    hits++;
+    stepIndex++;
 
-      if (hits >= 3){
-        appendLogHTML?.(`<span style="color:#c9c9ff">🥷 ${a.name} strikes rapidly with (${hits} hits)!</span>`);
-      }
+    if (t.alive?.() && chance(this.procChance)){
+      hit(a, t, { ability: this });
+      hits++;
+      procHits++;
+      stepIndex++;
+    }
+  }
+
+  // Combo callouts once per action (at the end, slightly delayed so it reads well)
+  const doComboPop = () => {
+    if (!t.alive?.()) return;
+
+    if (hits === 3){
+      vfxFloatText?.(t, `3 HIT COMBO!`, { ms: vfxMs?.(1100) ?? 1100, fontSize: 20, color: '#c9c9ff' });
+      vfxFlashColor?.(t, { color: 0xc9c9ff, ms: vfxMs?.(220) ?? 220, alpha: 0.18 });
+    } else if (hits >= 4){
+      vfxFloatText?.(t, `4 HIT SUPER COMBO!`, { ms: vfxMs?.(1250) ?? 1250, fontSize: 24, color: '#ffd37a' });
+      vfxFlashColor?.(t, { color: 0xffd37a, ms: vfxMs?.(240) ?? 240, alpha: 0.18 });
+    } else if (procHits > 0){
+      // still show a smaller proc-only tag if you want
+      vfxFloatText?.(t, `COMBO!`, { ms: vfxMs?.(1000) ?? 1000, fontSize: 15, color: '#c9c9ff' });
+    }
+
+  };
+
+  const comboDelay = Math.max(0, (hits - 1)) * hitGap;
+  if (scene?.time?.delayedCall) scene.time.delayedCall(comboDelay, doComboPop);
+  else doComboPop();
+}
+
     }
   },
 
@@ -2153,10 +2181,20 @@ function vfxFloatText(u, text, { ms=900, fontSize=22, color=null, stroke='#00000
   const now = (scene.time && typeof scene.time.now === 'number') ? scene.time.now : Date.now();
   const k = s;
 
-  const last = u._vfxTextLast || { t: -999999, k: '' };
-  const windowMs = (typeof vfxMs === 'function') ? vfxMs(140) : 140;
+// Allow repeated numeric pops (damage/heal) — they are satisfying and must not be deduped.
+// Keep dedupe for labels like "COMBO!", "SHIFT", "CURED", etc.
+const isNumericPop =
+  /^\+\d+/.test(s) ||     // +12
+  /^-\d+/.test(s)  ||     // -12
+  /^-\d+/.test(s.replace(/^\+/, '-')); // safety, though redundant
+
+const last = u._vfxTextLast || { t: -999999, k: '' };
+const windowMs = (typeof vfxMs === 'function') ? vfxMs(140) : 140;
+
+if (!isNumericPop) {
   if (last.k === k && (now - last.t) < windowMs) return;
   u._vfxTextLast = { t: now, k };
+}
 
   // ✅ SMART DEFAULTS when caller didn't pass a color
   if (!color) {
@@ -3060,12 +3098,35 @@ function updateStatusView(u){
 
 /* ---------- end-of-round ticks & shrug ---------- */
 const SHRUG_MESSAGES={ poison:(u)=>`${u.name} shrugs off the poison like it was nothing!`, stun:(u)=>`${u.name} snaps out of it and is no longer stunned!`, blind:(u)=>`${u.name} regains vision!`, berserk:(u)=>`${u.name}'s bloodlust wears off!`, def_down:(u)=>`${u.name} feels less vulnerable to attacks!` };
-function tryShrug(u,key){
-  const tgh=JOBS[u.job].TGH; const p=(CONFIG.SHRUG_BASE??0.05)+tgh*(CONFIG.SHRUG_TGH_FACTOR??0.005);
-  if(chance(p)){ const before=u.status.length; u.status=u.status.filter(s=>s.key!==key);
-    if(u.status.length!==before){ const msgFn=SHRUG_MESSAGES[key]; if(msgFn) appendLog(msgFn(u)); updateStatusView(u); }
-    return true;
-  } return false;
+function tryShrug(u, key){
+  if (!u || !key) return false;
+  if (!hasStatus(u, key)) return false;
+
+  const p = CONFIG.SHRUG_BASE ?? 0.05;
+  const tgh = (u.TGH ?? u.tgh ?? 0);
+  const extra = (CONFIG.SHRUG_TGH_FACTOR ?? 0.0025) * tgh;
+  const chanceToShrug = Math.max(0, Math.min(0.95, p + extra));
+
+  if (rand() >= chanceToShrug) return false;
+
+  // remove (mechanics)
+  removeStatusKey(u, key);
+  updateStatusView?.(u);
+
+  // cosmetic: log + VFX (once)
+  const label =
+    (VFX_TEXT && VFX_TEXT[key]) ? VFX_TEXT[key] :
+    String(key).toUpperCase();
+
+  appendLogHTML?.(`<span style="color:#7ad7ff">✨ ${u.name} shrugs off <b>${label}</b>!</span>`)
+  || appendLog?.(`${u.name} shrugs off ${label}!`);
+
+  vfxFlashColor?.(u, { color: 0x7ad7ff, ms: (typeof vfxMs==='function'? vfxMs(220):220), alpha: 0.18 });
+  vfxFloatText?.(u, `SHRUG ${label}`, { ms: vfxMs?.(1500) ?? 900, fontSize: 16, color: (VFX_COL?.dodge || '#7ad7ff') });
+
+  });
+
+  return true;
 }
 
 function applyHeal(caster, target, healSpecOrAbility, {
@@ -3264,8 +3325,12 @@ function endRoundTick(){
       }
     }
 
-    // Track expiries BEFORE we decrement
-const hadBleed = hasStatus(u, 'bleed');
+// Track expiries BEFORE we decrement
+const hadBleed  = hasStatus(u, 'bleed');
+const hadHaste  = hasStatus(u, 'shinobi_haste');
+const hadStun   = hasStatus(u, 'stun');
+const hadTaunt  = hasStatus(u, 'taunt');
+const hadBerserk= hasStatus(u, 'berserk');
 
 // Decrement durations (except poison)
 for (const st of u.status){ if (st.key !== 'poison') st.dur--; }
@@ -3278,9 +3343,56 @@ if (hadBleed && !hasStatus(u, 'bleed')){
 
   // optional tiny VFX tag
   vfxFloatText?.(u, `BLEED END`, {
-    ms: (typeof vfxMs==='function' ? vfxMs(900) : 900),
-    fontSize: Math.floor((typeof vfxScale==='function' ? vfxScale(12) : 12)),
+    ms: (typeof vfxMs==='function' ? vfxMs(1500) : 900),
+    fontSize: 16,
     color: '#ffb3b3'
+  });
+}
+
+// If Shinobi Haste expired this tick, announce it (cosmetic only)
+if (hadHaste && !hasStatus(u, 'shinobi_haste')){
+  appendLogHTML?.(`<span style="color:#c9c9ff">💨 Thief's Haste wears off of ${u.name}.</span>`)
+  || appendLog?.(`Thief's Haste wears off of ${u.name}.`);
+
+  // optional tiny VFX tag
+  vfxFloatText?.(u, `HASTE END`, {
+    ms: (typeof vfxMs==='function' ? vfxMs(1500) : 900),
+    fontSize: 16, // let vfxFloatText scale once
+    color: '#c9c9ff'
+  });
+}
+
+// ---- CC expiries (natural duration expiry, not shrug) ----
+if (hadStun && !hasStatus(u, 'stun')){
+  appendLogHTML?.(`<span style="color:${VFX_COL?.cc || '#b084ff'}">✨ Stun wears off of ${u.name}.</span>`)
+  || appendLog?.(`Stun wears off of ${u.name}.`);
+
+  vfxFloatText?.(u, `STUN END`, {
+    ms: vfxMs?.(1500) ?? 900,
+    fontSize: 16,
+    color: (VFX_COL?.cc || '#b084ff')
+  });
+}
+
+if (hadTaunt && !hasStatus(u, 'taunt')){
+  appendLogHTML?.(`<span style="color:${VFX_COL?.cc || '#b084ff'}">✨ Taunt wears off of ${u.name}.</span>`)
+  || appendLog?.(`Taunt wears off of ${u.name}.`);
+
+  vfxFloatText?.(u, `TAUNT END`, {
+    ms: vfxMs?.(1500) ?? 900,
+    fontSize: 16,
+    color: (VFX_COL?.cc || '#b084ff')
+  });
+}
+
+if (hadBerserk && !hasStatus(u, 'berserk')){
+  appendLogHTML?.(`<span style="color:${VFX_COL?.cc || '#b084ff'}">✨ Berserk wears off of ${u.name}.</span>`)
+  || appendLog?.(`Berserk wears off of ${u.name}.`);
+
+  vfxFloatText?.(u, `BERSERK END`, {
+    ms: vfxMs?.(1500) ?? 900,
+    fontSize: 16,
+    color: (VFX_COL?.cc || '#b084ff')
   });
 }
 

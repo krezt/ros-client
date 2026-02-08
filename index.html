@@ -2798,6 +2798,10 @@ function defMult(u){
   const upN=Math.min(countStacks(u,'def_up'),upCfg.max); const downN=Math.min(countStacks(u,'def_down'),downCfg.max);
   return Math.pow(1+upCfg.per, upN) * Math.pow(1-downCfg.per, downN);
 }
+function qknMult(u){
+  // For now: no effects change QKN
+  return 1;
+}
 
 /* ---------- combat math (damage) ---------- */
 function critChance(attacker, type){
@@ -3123,9 +3127,11 @@ ui._statusTip ||= scene.add.text(0, 0, '', {
 .setVisible(false);
 
   const effATK=u.ATK*atkMult(u), effSDM=u.SDM*sdmMult(u), effDEF=u.DEF*defMult(u);
-  const effQKN = (u.QKN ?? JOBS?.[u.job]?.QKN ?? 0) * (qknMult?.(u) ?? 1);
+  const baseQKN = (u.QKN ?? JOBS?.[u.job]?.QKN ?? 0);
+const effQKN  = baseQKN * qknMult(u);
+
 ui.statsTxt.setText(
-  `ATK ${effATK.toFixed(1)}  •  SDM ${effSDM.toFixed(1)}  •  DEF ${effDEF.toFixed(1)}  •  QKN ${effQKN}`
+  `ATK ${effATK.toFixed(1)}  •  SDM ${effSDM.toFixed(1)}  •  DEF ${effDEF.toFixed(1)}  •  QKN ${effQKN.toFixed(0)}`
 );
 
   ui.statusNodes ||= []; for (const n of ui.statusNodes) n.destroy(); ui.statusNodes.length=0;

@@ -2079,7 +2079,7 @@ a._rezUsed = true;
 
       // Optional: feedback on failure (purely cosmetic)
       vfxFlashColor?.(t, { color: 0xffffff, ms: vfxMs?.(180) ?? 180, alpha: 0.10 });
-      vfxFloatText?.(t, 'RESIST', { fontSize: 14, ms: vfxMs?.(650) ?? 650, color: '#d0d0d0' });
+      vfxFloatText?.(t, 'RESIST!', { fontSize: 22, ms: vfxMs?.(650) ?? 650, color: '#d0d0d0' });
     }
   }
 },
@@ -2103,7 +2103,7 @@ a._rezUsed = true;
 
       // Optional: feedback on failure (purely cosmetic)
       vfxFlashColor?.(t, { color: 0xffffff, ms: vfxMs?.(180) ?? 180, alpha: 0.10 });
-      vfxFloatText?.(t, 'RESIST', { fontSize: 14, ms: vfxMs?.(650) ?? 650, color: '#d0d0d0' });
+      vfxFloatText?.(t, 'RESIST!', { fontSize: 22, ms: vfxMs?.(1250) ?? 650, color: '#d0d0d0' });
     }
   }
 },
@@ -5040,7 +5040,7 @@ function resizePhaserToBattlefield(){ if(!game||!game.scale) return; const s=siz
 
 window.addEventListener('load', ()=>{
   window.SPRITE_BASE_URL=window.SPRITE_BASE_URL||'https://raw.githubusercontent.com/krezt/tol-assets/main';
-  window.ARENA_BG_URL   =window.ARENA_BG_URL   ||'https://raw.githubusercontent.com/krezt/tol-assets/refs/heads/main/bg/arena_bg5.png';
+  window.ARENA_BG_URL   =window.ARENA_BG_URL   ||'https://raw.githubusercontent.com/krezt/tol-assets/refs/heads/main/bg/arena_bg6.png';
 
   initActionBarShell();
   bootPhaser();

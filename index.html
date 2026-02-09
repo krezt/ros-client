@@ -4616,12 +4616,22 @@ class GameScene extends Phaser.Scene{
     this.MARGIN_L = 20; this.MARGIN_R = 20; this.GAP_MIN = 48;
     this.Y_START = 80; this.ROW_H = this.PANEL_H + 8;
 
-    // background
-    if (this.textures.exists('arena_bg')){
-      this.bgImage = this.add.image(0,0,'arena_bg').setOrigin(0.5,0.5).setDepth(-120);
-    } else {
-      this.bgSolid = this.add.rectangle(0,0,this.scale.width,this.scale.height,0x0f0f13,1).setOrigin(0,0).setDepth(-120);
-    }
+    // background (top-anchored, resizes with battlefield without cropping top)
+this.bgMode = 'TOP_CONTAIN'; // change to 'TOP_COVER' if you prefer filling the whole canvas
+
+if (this.textures.exists('arena_bg')) {
+  this.bgImage = this.add.image(0, 0, 'arena_bg')
+    .setOrigin(0.5, 0)       // ✅ top-center anchor
+    .setScrollFactor(0)
+    .setDepth(-120);
+
+  this.updateBackgroundLayout(); // ✅ initial layout
+} else {
+  this.bgSolid = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0x0f0f13, 1)
+    .setOrigin(0, 0)
+    .setScrollFactor(0)
+    .setDepth(-120);
+}
 
     // headers
     this.nameStyle = { fontSize:'18px', fontStyle:'bold', color:'#ffffff' };
@@ -4843,48 +4853,43 @@ if (PVP.phase === 'battle') {
 }
 
 updateBackgroundLayout(){
-    const W = this.scale.width, H = this.scale.height;
-    if (this.bgImage){
-      const tex = this.textures.get('arena_bg').getSourceImage();
-      const s = Math.max(W/tex.width, H/tex.height);
-      this.bgImage.setPosition(W/2,H/2).setScale(s);
-    } else if (this.bgSolid){
-      this.bgSolid.setPosition(0,0);
-      this.bgSolid.width = W; this.bgSolid.height = H;
-    }
-    const padX=8,padY=3;
-    this.playerHdrBg.setPosition(this.playerHdr.x-padX, this.playerHdr.y-padY);
-    this.playerHdrBg.width  = this.playerHdr.width  + padX*2;
-    this.playerHdrBg.height = this.playerHdr.height + padY*2;
-    this.enemyHdrBg.setPosition(this.enemyHdr.x-padX, this.enemyHdr.y-padY);
-    this.enemyHdrBg.width  = this.enemyHdr.width  + padX*2;
-    this.enemyHdrBg.height = this.enemyHdr.height + padY*2;
+  const W = this.scale.width, H = this.scale.height;
+
+  // --- Background sizing/positioning ---
+  if (this.bgImage && this.textures.exists('arena_bg')) {
+    const texImg = this.textures.get('arena_bg').getSourceImage();
+    const iw = texImg?.width  || this.bgImage.width  || 1;
+    const ih = texImg?.height || this.bgImage.height || 1;
+
+    // ✅ Scale to COVER the battlefield (no empty bars),
+    // but anchor TOP so the top never gets cut off.
+    const s = Math.max(W / iw, H / ih);
+
+    this.bgImage
+      .setScale(s)
+      .setOrigin(0.5, 0)     // top-centered anchor
+      .setPosition(W / 2, 0);
+
+  } else if (this.bgSolid) {
+    // solid fallback fits the canvas
+    this.bgSolid.setPosition(0, 0);
+    this.bgSolid.width  = W;
+    this.bgSolid.height = H;
   }
 
-  reflow(){
-    const W = this.scale.width;
-    const usable = Math.max(640, W);
-    this.PANEL_W = (usable < 1000) ? 340 : 380;
-    this.HPBAR_W = this.PANEL_W - (this.PAD_X*2) - 70;
+  // --- Header background pads (unchanged logic) ---
+  const padX = 8, padY = 3;
 
-    for (const u of [...player, ...enemy]){
-      if (!u || !u._ui) continue;
-      const localHPW = this.PANEL_W - (this.PAD_X*2) - 70 - (u._ui.nameOffset || 0);
-      u._ui.hpBarWidth = Math.max(80, localHPW);
-    }
+  if (this.playerHdrBg && this.playerHdr) {
+    this.playerHdrBg.setPosition(this.playerHdr.x - padX, this.playerHdr.y - padY);
+    this.playerHdrBg.width  = this.playerHdr.width  + padX * 2;
+    this.playerHdrBg.height = this.playerHdr.height + padY * 2;
+  }
 
-    const LEFT_X = this.MARGIN_L;
-    const RIGHT_X = Math.max(LEFT_X + this.PANEL_W + this.GAP_MIN, usable - (this.PANEL_W + this.MARGIN_R));
-    this.playerHdr.setPosition(LEFT_X,54);
-    this.enemyHdr.setPosition(RIGHT_X,54);
-    this.playerCol.setPosition(LEFT_X,0);
-    this.enemyCol.setPosition(RIGHT_X,0);
-
-    if (typeof this.updateHeaderNames === 'function') this.updateHeaderNames();
-
-    for (const u of [...player, ...enemy]){ if (u && u._refresh) u._refresh(); }
-
-    this.updateBackgroundLayout();
+  if (this.enemyHdrBg && this.enemyHdr) {
+    this.enemyHdrBg.setPosition(this.enemyHdr.x - padX, this.enemyHdr.y - padY);
+    this.enemyHdrBg.width  = this.enemyHdr.width  + padX * 2;
+    this.enemyHdrBg.height = this.enemyHdr.height + padY * 2;
   }
 }
 

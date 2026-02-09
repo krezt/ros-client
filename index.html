@@ -3134,6 +3134,8 @@ ui.statsTxt.setText(
   `ATK ${effATK.toFixed(1)}  •  SDM ${effSDM.toFixed(1)}  •  DEF ${effDEF.toFixed(1)}  •  QKN ${effQKN.toFixed(0)}`
 );
 
+fitTextToWidth(ui.statsTxt, ui.statsMaxW, { minSize: 10 });
+
   ui.statusNodes ||= []; for (const n of ui.statusNodes) n.destroy(); ui.statusNodes.length=0;
 
   const ORDER=['shinobi_haste','invisible','bleed','shift','divine_shield','guard','shield_redirect','premonition','counter','poison','stun','taunt','blind','berserk','def_down','def_up','atk_up','sdm_up','marked','arcane_echo'];
@@ -4012,6 +4014,19 @@ function updateTopBarForCurrentSelection(){
   topLeftEl.textContent = `Round ${roundNumber} — Choose action for ${actor.name}`;
 }
 
+function fitTextToWidth(txtObj, maxW, { minSize=10 } = {}) {
+  if (!txtObj || !maxW) return;
+  let size = parseInt(txtObj.style.fontSize, 10) || 14;
+
+  // reset to starting size if you want (optional)
+  // size = 14; txtObj.setFontSize(size);
+
+  while (txtObj.width > maxW && size > minSize) {
+    size -= 1;
+    txtObj.setFontSize(size);
+  }
+}
+
 function enterLobbyUI(){
   // Top bar title for the lobby
   if (topLeftEl) topLeftEl.textContent = 'Realm of Shinobi: Tournament of Legends';
@@ -4678,13 +4693,13 @@ ensureUnitSides();
       const statsTxt = this.add.text(x+nameOffset, hpBarY+18, '', {fontSize:'14px', color:'#dfe7ff'});
       panel.add(statsTxt);
 
-      const statusNodes = [];
-      u._ui = {
-        panel, fg, txt:hpTxt, statusNodes, statsTxt, baseX:x, baseY:y, scene:this,
-        nameOffset, hpBarWidth:hpBarW,
-        badgeStartX:x+nameOffset, badgeY:statsTxt.y+16,
-        badgeMaxW:Math.max(80, this.PANEL_W-(this.PAD_X*2)-nameOffset)
-      };
+      const statsMaxW = (this.PANEL_W - this.PAD_X) - (x + nameOffset);
+
+const statusNodes = [];
+u._ui = {
+  panel, fg, txt:hpTxt, statusNodes, statsTxt, baseX:x, baseY:y, scene:this,
+  nameOffset, hpBarWidth:hpBarW,
+  statsMaxW,
 
       // refresh visuals
       u._refresh = () => {

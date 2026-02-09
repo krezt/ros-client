@@ -4892,6 +4892,42 @@ updateBackgroundLayout(){
     this.enemyHdrBg.height = this.enemyHdr.height + padY * 2;
   }
 }
+reflow(){
+  const W = this.scale.width;
+  const usable = Math.max(640, W);
+
+  this.PANEL_W = (usable < 1000) ? 340 : 380;
+  this.HPBAR_W = this.PANEL_W - (this.PAD_X*2) - 70;
+
+  // Update per-unit cached widths (if panels already exist)
+  for (const u of [...(globalThis.player||[]), ...(globalThis.enemy||[])]) {
+    if (!u || !u._ui) continue;
+    const localHPW = this.PANEL_W - (this.PAD_X*2) - 70 - (u._ui.nameOffset || 0);
+    u._ui.hpBarWidth = Math.max(80, localHPW);
+  }
+
+  const LEFT_X  = this.MARGIN_L;
+  const RIGHT_X = Math.max(
+    LEFT_X + this.PANEL_W + this.GAP_MIN,
+    usable - (this.PANEL_W + this.MARGIN_R)
+  );
+
+  if (this.playerHdr) this.playerHdr.setPosition(LEFT_X, 54);
+  if (this.enemyHdr)  this.enemyHdr.setPosition(RIGHT_X, 54);
+
+  if (this.playerCol) this.playerCol.setPosition(LEFT_X, 0);
+  if (this.enemyCol)  this.enemyCol.setPosition(RIGHT_X, 0);
+
+  if (typeof this.updateHeaderNames === 'function') this.updateHeaderNames();
+
+  // Refresh visuals after resize
+  for (const u of [...(globalThis.player||[]), ...(globalThis.enemy||[])]) {
+    if (u && typeof u._refresh === 'function') u._refresh();
+  }
+
+  this.updateBackgroundLayout?.();
+}
+
 }
 
 

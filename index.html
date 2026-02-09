@@ -4691,9 +4691,9 @@ ensureUnitSides();
       panel.add([hpBg, fg]);
 
       const statsTxt = this.add.text(x+nameOffset, hpBarY+18, '', {fontSize:'14px', color:'#dfe7ff'});
-      panel.add(statsTxt);
+panel.add(statsTxt);
 
-      const statsMaxW = (this.PANEL_W - this.PAD_X) - (x + nameOffset);
+const statsMaxW = (this.PANEL_W - this.PAD_X) - (x + nameOffset);
 
 const statusNodes = [];
 u._ui = {
@@ -4701,37 +4701,43 @@ u._ui = {
   nameOffset, hpBarWidth:hpBarW,
   statsMaxW,
 
-      // refresh visuals
-      u._refresh = () => {
-        const p = u.hp / u.maxHP;
-        u._ui.fg.width = Math.max(1, Math.floor(u._ui.hpBarWidth * Math.max(0, p)));
-        u._ui.fg.fillColor = p > 0.5 ? 0x47d16a : (p > 0.25 ? 0xffc857 : 0xff5d6c);
-        u._ui.txt.setPosition(this.PANEL_W - this.PAD_X, u._ui.baseY);
-        u._ui.txt.setText(`HP ${Math.max(0, u.hp)}/${u.maxHP}`);
+  badgeStartX: x + nameOffset,
+  badgeY: statsTxt.y + 16,
+  badgeMaxW: Math.max(80, this.PANEL_W - (this.PAD_X*2) - nameOffset)
+};
 
-        const isDead = u.hp <= 0;
-        u._ui.panel.setAlpha(isDead ? 0.55 : 1);
+// refresh visuals (THIS MUST BE OUTSIDE THE OBJECT LITERAL)
+u._refresh = () => {
+  const p = u.hp / u.maxHP;
+  u._ui.fg.width = Math.max(1, Math.floor(u._ui.hpBarWidth * Math.max(0, p)));
+  u._ui.fg.fillColor = p > 0.5 ? 0x47d16a : (p > 0.25 ? 0xffc857 : 0xff5d6c);
+  u._ui.txt.setPosition(this.PANEL_W - this.PAD_X, u._ui.baseY);
+  u._ui.txt.setText(`HP ${Math.max(0, u.hp)}/${u.maxHP}`);
 
-        // KO cross overlay
-        if (isDead) {
-          if (!u._ui._deadCross) {
-            const g = this.add.graphics();
-            g.lineStyle(2, 0xff6b6b, 0.95);
-            const pad = 6, w = this.PANEL_W, h = this.PANEL_H;
-            g.strokeLineShape(new Phaser.Geom.Line(pad, pad, w - pad, h - pad));
-            g.strokeLineShape(new Phaser.Geom.Line(w - pad, pad, pad, h - pad));
-            u._ui.panel.add(g);
-            u._ui._deadCross = g;
-          }
-        } else {
-          if (u._ui._deadCross) { u._ui._deadCross.destroy(); u._ui._deadCross = null; }
-        }
+  const isDead = u.hp <= 0;
+  u._ui.panel.setAlpha(isDead ? 0.55 : 1);
 
-        if (!isDead && u._ui._struck) { u._ui._struck.destroy(); u._ui._struck = null; }
+  // KO cross overlay
+  if (isDead) {
+    if (!u._ui._deadCross) {
+      const g = this.add.graphics();
+      g.lineStyle(2, 0xff6b6b, 0.95);
+      const pad = 6, w = this.PANEL_W, h = this.PANEL_H;
+      g.strokeLineShape(new Phaser.Geom.Line(pad, pad, w - pad, h - pad));
+      g.strokeLineShape(new Phaser.Geom.Line(w - pad, pad, pad, h - pad));
+      u._ui.panel.add(g);
+      u._ui._deadCross = g;
+    }
+  } else {
+    if (u._ui._deadCross) { u._ui._deadCross.destroy(); u._ui._deadCross = null; }
+  }
 
-        updateStatusView(u);
-      };
-      u._refresh();
+  if (!isDead && u._ui._struck) { u._ui._struck.destroy(); u._ui._struck = null; }
+
+  updateStatusView(u);
+};
+
+u._refresh();
 
       // click to target
       const hitBox = this.add.rectangle(this.PANEL_W/2, 24, this.PANEL_W, 48, 0x000000, 0)

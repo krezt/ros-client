@@ -111,6 +111,14 @@
     }
     #action-bar-left { grid-column: 1; }
     #action-bar-right{ grid-column: 2; }
+#action-bar-right{
+  background:#141a26; /* optional: darker frame behind the image */
+}
+
+#action-bar-right img{
+  border-radius: 8px;
+}
+
 
     /* Action bar inner shell */
     #action-bar-inner{
@@ -315,6 +323,7 @@ window.resetAbilityUsesForBattle = window.resetAbilityUsesForBattle || function 
 const topLeftEl     = document.getElementById('top-left');
 const bfEl          = document.getElementById('battlefield');
 const actionLeftEl  = document.getElementById('action-bar-left');
+const actionRightEl = document.getElementById('action-bar-right');
 
 /* ---------- log helpers ---------- */
 function appendLog(line){
@@ -352,6 +361,28 @@ function initActionBarShell(){
   actionInnerEl.appendChild(actionPromptEl); actionInnerEl.appendChild(actionButtonsEl);
   actionLeftEl.appendChild(actionInnerEl);
 }
+
+function setStaticRightPanelImage(url){
+  if (!actionRightEl) return;
+
+  actionRightEl.innerHTML = '';
+
+  const img = document.createElement('img');
+  img.src = url;
+  img.alt = '';
+  img.draggable = false;
+
+  Object.assign(img.style, {
+    width: '100%',
+    height: '100%',
+    objectFit: 'contain',
+    imageRendering: 'pixelated',
+    display: 'block'
+  });
+
+  actionRightEl.appendChild(img);
+}
+
 function clearActionBar(){ if (actionButtonsEl) actionButtonsEl.innerHTML = ''; if (actionPromptEl) actionPromptEl.textContent = ''; }
 
 /* ---------- tiny async helpers ---------- */
@@ -5084,6 +5115,7 @@ window.addEventListener('load', ()=>{
   window.ARENA_BG_URL   =window.ARENA_BG_URL   ||'https://raw.githubusercontent.com/krezt/tol-assets/refs/heads/main/bg/arena_bg6.png';
 
   initActionBarShell();
+setStaticRightPanelImage('https://raw.githubusercontent.com/krezt/tol-assets/main/ui/right_panel.png');
   bootPhaser();
   setTimeout(resizePhaserToBattlefield, 0);
 

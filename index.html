@@ -376,7 +376,7 @@ function setStaticRightPanelImage(url){
   img.draggable = false;
   img.style.width = '100%';
   img.style.height = '100%';
-  img.style.objectFit = 'contain';
+  img.style.objectFit = 'fill';
   img.style.imageRendering = 'pixelated';
   img.style.display = 'block';
 
@@ -405,8 +405,6 @@ function setStaticRightPanelImage(url){
 
   pre.src = (url || '').trim();
 
-  // Debug: outline so you can confirm the panel has size
-  box.style.outline = '2px solid rgba(255,0,0,.25)';
 }
 
 function clearActionBar(){ if (actionButtonsEl) actionButtonsEl.innerHTML = ''; if (actionPromptEl) actionPromptEl.textContent = ''; }
@@ -726,8 +724,8 @@ case 'Electromancer': return [
   desc: 'Zap enemies and energize allies. Small chance to disorient enemies.',
   speed: 'fast', type: 'mag', target: 'all-enemies',
 
-  base: { min: 4, max: 6 }, statCoef: 0.25,
-  heal: { min: 4, max: 6 }, healCoef: 0.18, scalesWith: 'SDM',
+  base: { min: 1, max: 4 }, statCoef: 0.25,
+  heal: { min: 1, max: 4 }, healCoef: 0.18, scalesWith: 'SDM',
 
   stunChance: 0.15,
 
@@ -899,11 +897,11 @@ const removed = beforeN - a.status.length;
   */
   {
     label: 'Shift',
-    desc: 'On cast and one additional round, dodge all physical type attacks.',
+    desc: 'On cast and 2 additional rounds, dodge all physical type attacks.',
     speed: 'normal', type: 'mag', target: 'self',
 
     use: function(a){
-      const dur = 2;
+      const dur = 3;
       removeStatusKey(a, 'shift');
       pushStatus(a, { key:'shift', dur });
 
@@ -950,11 +948,11 @@ case 'Shinobi': return [
   */
   {
     label: 'Attack',
-    desc: 'Fast strike. Chance to double strike.',
-    speed: 'fast', type: 'phys', target: 'enemy',
-    base: { min: 30, max: 55 }, statCoef: 0.45, isBasic: true,
+    desc: 'Shuriken attack. Chance to double strike.',
+    speed: 'medium', type: 'phys', target: 'enemy',
+    base: { min: 30, max: 60 }, statCoef: 0.45, isBasic: true,
 
-    procChance: 0.55,
+    procChance: 0.60,
 
     use: function(a, t){
   if (!t || !t.alive?.()) return;
@@ -1044,10 +1042,10 @@ case 'Shinobi': return [
   /* 3) Invisibility (normal) — untargetable for 2 rounds */
   {
     label: 'Invisibility',
-    desc: 'Become untargetable from cast and next round.',
+    desc: 'Dodge targeted abilities from cast and next 2 rounds.',
     speed: 'slow', type: 'mag', target: 'self',
     use: function(a){
-      const dur = 2;
+      const dur = 3;
       removeStatusKey(a, 'invisible');
       pushStatus(a, { key:'invisible', dur });
 

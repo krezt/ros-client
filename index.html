@@ -118,7 +118,7 @@
 #action-bar-right img{
   width: 100%;
   height: 100%;
-  display: block;
+  display: contain;
 }
 
 
@@ -3174,7 +3174,7 @@ function updateStatusView(u){
   const ui=u._ui, scene=ui.scene;
 
 ui._statusTip ||= scene.add.text(0, 0, '', {
-  fontSize: '12px',
+  fontSize: '14px',
   color: '#ffffff',
   backgroundColor: 'rgba(0,0,0,0.75)',
   padding: { x: 6, y: 3 }
@@ -3191,7 +3191,7 @@ ui.statsTxt.setText(
   `ATK ${effATK.toFixed(1)}  •  SDM ${effSDM.toFixed(1)}  •  DEF ${effDEF.toFixed(1)}  •  QKN ${effQKN.toFixed(0)}`
 );
 
-fitTextToWidth(ui.statsTxt, ui.statsMaxW, { minSize: 10 });
+fitTextToWidth(ui.statsTxt, ui.statsMaxW, { minSize: 12 });
 
   ui.statusNodes ||= []; for (const n of ui.statusNodes) n.destroy(); ui.statusNodes.length=0;
 

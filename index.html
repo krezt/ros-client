@@ -319,6 +319,8 @@ window.resetAbilityUsesForBattle = window.resetAbilityUsesForBattle || function 
   });
 })();
 
+window.ACTION_RIGHT_URL = 'https://raw.githubusercontent.com/krezt/tol-assets/main/ui/right_panel.png';
+
 /* ---------- common DOM refs ---------- */
 const topLeftEl     = document.getElementById('top-left');
 const bfEl          = document.getElementById('battlefield');
@@ -363,24 +365,50 @@ function initActionBarShell(){
 }
 
 function setStaticRightPanelImage(url){
-  if (!actionRightEl) return;
+  const box = document.getElementById('action-bar-right');
+  if (!box) { console.error('[RightPanel] #action-bar-right not found'); return; }
 
-  actionRightEl.innerHTML = '';
+  // clear panel
+  box.innerHTML = '';
+  box.style.position = 'relative';
 
+  // Create the <img> first (so you can see it even before load completes)
   const img = document.createElement('img');
-  img.src = url;
   img.alt = '';
   img.draggable = false;
+  img.style.width = '100%';
+  img.style.height = '100%';
+  img.style.objectFit = 'contain';
+  img.style.imageRendering = 'pixelated';
+  img.style.display = 'block';
 
-  Object.assign(img.style, {
-    width: '100%',
-    height: '100%',
-    objectFit: 'contain',
-    imageRendering: 'pixelated',
-    display: 'block'
-  });
+  // If you are using raw.githubusercontent.com, this is usually safe:
+  img.crossOrigin = 'anonymous';
 
-  actionRightEl.appendChild(img);
+  // Add it to the DOM right away
+  box.appendChild(img);
+
+  // Preload using the "old" pattern
+  const pre = new Image();
+  pre.crossOrigin = 'anonymous';
+
+  pre.onload = () => {
+    console.log('[RightPanel] loaded', url, pre.naturalWidth + 'x' + pre.naturalHeight);
+    img.src = url; // set only after confirmed load
+  };
+
+  pre.onerror = (e) => {
+    console.error('[RightPanel] FAILED', url, e);
+    // Show a visible fallback so you know the box is working
+    box.textContent = 'Right panel image failed to load.';
+    box.style.color = '#ffb3b3';
+    box.style.fontSize = '12px';
+  };
+
+  pre.src = (url || '').trim();
+
+  // Debug: outline so you can confirm the panel has size
+  box.style.outline = '2px solid rgba(255,0,0,.25)';
 }
 
 function clearActionBar(){ if (actionButtonsEl) actionButtonsEl.innerHTML = ''; if (actionPromptEl) actionPromptEl.textContent = ''; }
@@ -4621,8 +4649,12 @@ class GameScene extends Phaser.Scene{
       const JOB_LIST = (Array.isArray(ALL_CLASSES) && ALL_CLASSES.length) ? ALL_CLASSES :
         ['Warrior','Barbarian','Rogue','Cleric','Mage','Paladin','Archer','Monk','Necromancer','Mystic'];
       for (const job of JOB_LIST){
-        this.load.image(`portrait_${job}`, `${base}/portraits/${encodeURIComponent(job)}.png`);
-      }
+  // Battlefield portraits (used in unit panels)
+  this.load.image(`portrait_${job}`, `${base}/portraits/${encodeURIComponent(job)}.png`);
+
+  // Draft portraits (used in draft UI)
+  this.load.image(`draft_${job}`, `${base}/draft_portraits/${encodeURIComponent(job)}.png`);
+}
       const STATUS_KEYS = [
   'poison','bleed',
   'stun','taunt','blind','berserk',
@@ -5116,6 +5148,14 @@ window.addEventListener('load', ()=>{
 
   initActionBarShell();
 setStaticRightPanelImage('https://raw.githubusercontent.com/krezt/tol-assets/main/ui/right_panel.png');
+  bootPhaser();
+  setTimeout(resizePhaserToBattlefield, 0);
+
+window.addEventListener('load', () => {
+  initActionBarShell();
+
+  setStaticRightPanelImage(window.ACTION_RIGHT_URL);
+
   bootPhaser();
   setTimeout(resizePhaserToBattlefield, 0);
 

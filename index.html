@@ -319,8 +319,6 @@ window.resetAbilityUsesForBattle = window.resetAbilityUsesForBattle || function 
   });
 })();
 
-window.ACTION_RIGHT_URL = 'https://raw.githubusercontent.com/krezt/tol-assets/main/ui/right_panel.png';
-
 /* ---------- common DOM refs ---------- */
 const topLeftEl     = document.getElementById('top-left');
 const bfEl          = document.getElementById('battlefield');
@@ -5138,46 +5136,67 @@ function setLobbyRoomStatus(id){
 
 
 /* ---------- Phaser boot ---------- */
-function sizeFromBattlefield(){ const r=bfEl.getBoundingClientRect(); const w=Math.max(640,Math.floor(r.width)); const h=Math.max(480,Math.floor(r.height)); return {w,h}; }
-function bootPhaser(){ const s=sizeFromBattlefield(); game=new Phaser.Game({ type:Phaser.AUTO, parent:'battlefield', width:s.w, height:s.h, backgroundColor:'#14141b', scene:[GameScene], pixelArt:true }); globalThis.gameRef=game; }
-function resizePhaserToBattlefield(){ if(!game||!game.scale) return; const s=sizeFromBattlefield(); if(Number.isFinite(s.w)&&Number.isFinite(s.h)&&s.w>0&&s.h>0){ game.scale.resize(s.w,s.h); } }
+/* ---------- Phaser boot ---------- */
+function sizeFromBattlefield(){
+  const r = bfEl.getBoundingClientRect();
+  const w = Math.max(640, Math.floor(r.width));
+  const h = Math.max(480, Math.floor(r.height));
+  return { w, h };
+}
+function bootPhaser(){
+  const s = sizeFromBattlefield();
+  game = new Phaser.Game({
+    type: Phaser.AUTO,
+    parent: 'battlefield',
+    width: s.w,
+    height: s.h,
+    backgroundColor: '#14141b',
+    scene: [GameScene],
+    pixelArt: true
+  });
+  globalThis.gameRef = game;
+}
+function resizePhaserToBattlefield(){
+  if (!game || !game.scale) return;
+  const s = sizeFromBattlefield();
+  if (Number.isFinite(s.w) && Number.isFinite(s.h) && s.w > 0 && s.h > 0){
+    game.scale.resize(s.w, s.h);
+  }
+}
 
-window.addEventListener('load', ()=>{
-  window.SPRITE_BASE_URL=window.SPRITE_BASE_URL||'https://raw.githubusercontent.com/krezt/tol-assets/main';
-  window.ARENA_BG_URL   =window.ARENA_BG_URL   ||'https://raw.githubusercontent.com/krezt/tol-assets/refs/heads/main/bg/arena_bg6.png';
-
-  initActionBarShell();
-setStaticRightPanelImage('https://raw.githubusercontent.com/krezt/tol-assets/main/ui/right_panel.png');
-  bootPhaser();
-  setTimeout(resizePhaserToBattlefield, 0);
-
+/* ---------- One-time boot ---------- */
 window.addEventListener('load', () => {
+  window.SPRITE_BASE_URL   = window.SPRITE_BASE_URL || 'https://raw.githubusercontent.com/krezt/tol-assets/main';
+  window.ARENA_BG_URL      = window.ARENA_BG_URL    || 'https://raw.githubusercontent.com/krezt/tol-assets/refs/heads/main/bg/arena_bg6.png';
+  window.ACTION_RIGHT_URL  = window.ACTION_RIGHT_URL || 'https://raw.githubusercontent.com/krezt/tol-assets/main/ui/right_panel.png';
+
+  // 1) Build action bar DOM
   initActionBarShell();
 
+  // 2) Show right panel image
   setStaticRightPanelImage(window.ACTION_RIGHT_URL);
 
+  // 3) Boot Phaser
   bootPhaser();
   setTimeout(resizePhaserToBattlefield, 0);
 
-  // ✅ ensure PVP exists and lobby mounts after boot
+  // 4) Mount lobby if needed
   if (window.PVP && (PVP.phase === 'idle' || !PVP.phase)) {
     PVP.phase = 'idle';
-    setTimeout(() => {
-  if (typeof showLobby === 'function') showLobby();
-}, 0);
-
+    setTimeout(() => { if (typeof showLobby === 'function') showLobby(); }, 0);
   }
 
+  // 5) Resize observer for battlefield + background layout
   if ('ResizeObserver' in window){
-    const ro=new ResizeObserver(()=>{
+    const ro = new ResizeObserver(() => {
       resizePhaserToBattlefield();
-      if(sceneRef&&sceneRef.updateBackgroundLayout) sceneRef.updateBackgroundLayout();
+      if (sceneRef && sceneRef.updateBackgroundLayout) sceneRef.updateBackgroundLayout();
     });
     ro.observe(bfEl);
   }
 });
 
-
+// normal window resize
 window.addEventListener('resize', resizePhaserToBattlefield);
 
 
@@ -5767,11 +5786,8 @@ function showRightWaitHint(){
 }
 
 function mountRightPanel(){
-  // Intentionally blank: all controls live in the battlefield lobby overlay now.
-  const panel = document.getElementById('action-bar-right');
-  if (panel) panel.textContent = '';
+  setStaticRightPanelImage(window.ACTION_RIGHT_URL);
 }
-
 
 /* ---------- Draft UI ---------- */
 function getOrCreateDraftOverlay(){

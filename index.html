@@ -378,7 +378,7 @@ function setStaticRightPanelImage(url){
   img.draggable = false;
   img.style.width = '100%';
   img.style.height = '100%';
-  img.style.objectFit = 'contain';
+  img.style.objectFit = 'stretch';
   img.style.imageRendering = 'pixelated';
   img.style.display = 'block';
 
@@ -726,8 +726,8 @@ case 'Electromancer': return [
   desc: 'Zap enemies and energize allies. Small chance to disorient enemies.',
   speed: 'fast', type: 'mag', target: 'all-enemies',
 
-  base: { min: 1, max: 4 }, statCoef: 0.25,
-  heal: { min: 1, max: 4 }, healCoef: 0.18, scalesWith: 'SDM',
+  base: { min: 1, max: 4 }, statCoef: 0.05,
+  heal: { min: 1, max: 4 }, healCoef: 0.10, scalesWith: 'SDM',
 
   stunChance: 0.15,
 
@@ -4696,7 +4696,7 @@ if (this.textures.exists('arena_bg')) {
 
     // headers
     this.nameStyle = { fontSize:'18px', fontStyle:'bold', color:'#ffffff' };
-    this.titleTxt  = this.add.text(20,20,'ROS: Tournament of Legends',{fontSize:'24px', fontStyle:'bold'});
+    // this.titleTxt  = this.add.text(20,20,'ROS: Tournament of Legends',{fontSize:'24px', fontStyle:'bold'});
     this.playerHdr = this.add.text(0,54,(PVP.playerName||'You'),      {fontSize:'18px', fontStyle:'bold', color:'#ffffff'});
     this.enemyHdr  = this.add.text(0,54,(PVP.opponentName||'Opponent'),{fontSize:'18px', fontStyle:'bold', color:'#ffffff'});
     const headerAlpha = 0.80;

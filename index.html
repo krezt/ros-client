@@ -376,8 +376,8 @@ function setStaticRightPanelImage(url){
   const img = document.createElement('img');
   img.alt = '';
   img.draggable = false;
-  img.style.width = '100%';
-  img.style.height = '100%';
+  img.style.width = '130%';
+  img.style.height = '130%';
   img.style.objectFit = 'stretch';
   img.style.imageRendering = 'pixelated';
   img.style.display = 'block';
@@ -434,21 +434,21 @@ const choice=(arr)=> arr[(rand()*arr.length)|0];
 const CONFIG = {
   BASE_HP: 55, HP_PER_TGH: 24,
   ATK_PER_STR: 1.5, SDM_PER_INT: 1.5,
-  DEF_FROM_TGH: 0.75, DEF_FROM_QKN: 0.75,
+  DEF_FROM_TGH: 0.75, DEF_FROM_QKN: 0.5,
 
   CC_BASE_MIN: 2, CC_BASE_MAX: 3, CC_SDM_PER_BONUS: 15, CC_MAX_CAP: 5,
   CRIT_BASE: 0.025, CRIT_CAP: 0.35, CRIT_QKN_FACTOR: 0.005, CRIT_INT_FACTOR: 0.005,
   DODGE_BASE: 0.025, DODGE_QKN_FACTOR: 0.0025, DODGE_CAP: 0.15,
 
-  ARMOR_K: 0.025, DAMAGE_GLOBAL: 1.15,
+  ARMOR_K: 0.025, DAMAGE_GLOBAL: 1.20,
 
   SHRUG_BASE: 0.05, SHRUG_TGH_FACTOR: 0.0025,
 
-  BUFF_BASE_MIN: 3, BUFF_BASE_MAX: 4, BUFF_SDM_PER_BONUS: 15, BUFF_MAX_CAP: 6,
+  BUFF_BASE_MIN: 3, BUFF_BASE_MAX: 5, BUFF_SDM_PER_BONUS: 15, BUFF_MAX_CAP: 7,
 
   PROC: {
-    Cleric: { chance: 0.5 }, Mage: { chance: 0.5 }, Monk: { chance: 0.66 },
-    Mystic: { chance: 0.5 }, Necromancer: { chance: 0.5 }, Paladin: { chance: 0.5 },
+    Cleric: { chance: 0.75 }, Mage: { chance: 0.75 }, Monk: { chance: 0.75 },
+    Mystic: { chance: 0.75 }, Necromancer: { chance: 0.5 }, Paladin: { chance: 0.75 },
   },
 
   STACKS: { atk_up:{per:0.5,max:4}, sdm_up:{per:0.5,max:4}, def_up:{per:0.33,max:4}, def_down:{per:0.25,max:4} },
@@ -457,7 +457,7 @@ const CONFIG = {
   ECHO_MULT: 1.20,
   SHIELDWALL_GUARD: 0.20,
   COUNTER_COEF: 0.30,
-  STATCOEF_OVERRIDE: 1.0, // keep 1.0 to simplify tuning
+  STATCOEF_OVERRIDE: null, // keep 1.0 to simplify tuning
   NO_GLOBAL_MULT: true,
   IGNORE_DEFPEN: false
 };
@@ -560,7 +560,7 @@ const ALL_CLASSES = ['Shinobi','Warrior','Barbarian','Electromancer','Rogue','Cl
 const JOBS = {
   Warrior:  { STR:26,QKN:16,INT:8, TGH:36, kind:'phys', name:'Warrior' },
   Shinobi:  { STR:24,QKN:24,INT:10, TGH:26, kind:'phys', name:'Shinobi' },
-  Electromancer: { STR:10,QKN:15,INT:32, TGH:25, kind:'mag', name:'Electromancer' },
+  Electromancer: { STR:10,QKN:15,INT:27, TGH:25, kind:'mag', name:'Electromancer' },
   Rogue:    { STR:22,QKN:30,INT:8,TGH:27,  kind:'phys', name:'Rogue' },
   Cleric:   { STR:7, QKN:18,INT:28,TGH:29, kind:'mag',  name:'Cleric' },
   Barbarian:{ STR:33,QKN:12, INT:7,TGH:34, kind:'phys', name:'Barbarian' },
@@ -772,7 +772,7 @@ case 'Electromancer': return [
   label: 'Chain Lightning',
   desc: 'Massive damage. 65% chance to jump to a new random target (any team), repeating.',
   speed: 'normal', type: 'mag', target: 'enemy',
-  base: { min: 85, max: 125 }, statCoef: 0.65,
+  base: { min: 85, max: 145 }, statCoef: 0.65,
   bounceChance: 0.65,
 
   use: async function(a, first){
@@ -2895,19 +2895,37 @@ function abilityBasePower(ability){
   return min + randInt(0, Math.max(0, max - min));
 }
 function computeAbilityDamage(attacker, defender, ability){
-  const type=getAbilityType(attacker,ability);
-  const scalesWith=getAbilityScalesWith(attacker,ability,type);
-  const statValue=(scalesWith==='SDM')?attacker.SDM:attacker.ATK;
-  const offMult=(scalesWith==='SDM')?sdmMult(attacker):atkMult(attacker);
-  const coef=Number.isFinite(CONFIG.STATCOEF_OVERRIDE)?CONFIG.STATCOEF_OVERRIDE:(ability?.statCoef??0);
-  let dmg = Math.max(0, abilityBasePower(ability) + Math.floor(statValue * coef * offMult));
-  if (type==='phys' && tryDodge(attacker, defender,'phys')) return {hit:false,dmg:0,crit:false,dodged:true,_type:type};
-  let isCrit=false; const pCrit=Math.min(1, Math.max(0, critChance(attacker,type)+(ability?.critBonus??0)));
-  if (chance(pCrit)){ dmg=Math.floor(dmg*1.75); isCrit=true; }
-  const defPen=CONFIG.IGNORE_DEFPEN?0:(ability?.defPen||0);
-  dmg=applyDefense(dmg, defender, defPen);
-  if (!CONFIG.NO_GLOBAL_MULT) dmg=Math.floor(dmg*(CONFIG.DAMAGE_GLOBAL||1));
-  return {hit:true,dmg,crit:isCrit,dodged:false,_type:type};
+  const type = getAbilityType(attacker, ability);
+  const scalesWith = getAbilityScalesWith(attacker, ability, type);
+
+  // 1) roll base damage FIRST
+  let dmg = Math.max(0, abilityBasePower(ability)); // should roll min/max inside abilityBasePower()
+
+  // 2) apply your desired stat multiplier
+  // spells -> SDM, phys -> ATK (based on scalesWith)
+  const statValue = (scalesWith === 'SDM') ? (attacker.SDM || 0) : (attacker.ATK || 0);
+  const statMult  = 1 + (statValue / 100);
+
+  dmg = Math.floor(dmg * statMult);
+
+  // 3) dodge for phys (leave as-is)
+  if (type === 'phys' && tryDodge(attacker, defender, 'phys')){
+    return {hit:false,dmg:0,crit:false,dodged:true,_type:type};
+  }
+
+  // 4) crit (leave as-is)
+  let isCrit = false;
+  const pCrit = Math.min(1, Math.max(0, critChance(attacker,type) + (ability?.critBonus ?? 0)));
+  if (chance(pCrit)){ dmg = Math.floor(dmg * 1.75); isCrit = true; }
+
+  // 5) defense / pen (leave as-is)
+  const defPen = CONFIG.IGNORE_DEFPEN ? 0 : (ability?.defPen || 0);
+  dmg = applyDefense(dmg, defender, defPen);
+
+  // 6) optional global mult (leave as-is)
+  if (!CONFIG.NO_GLOBAL_MULT) dmg = Math.floor(dmg * (CONFIG.DAMAGE_GLOBAL || 1));
+
+  return {hit:true, dmg, crit:isCrit, dodged:false, _type:type};
 }
 
 // HEALING MATH //
@@ -2987,13 +3005,17 @@ window.testHealVFX = function(){
   vfxHealImpact(u, u, 25, "Test Heal");
 };
 
-/* lightweight raw calc */
 function calcDamage(a,t,opt){
-  const type=opt.type||(a.kind==='mag'?'mag':'phys');
-  const fakeAbility={ label:opt.verb||'Attack', type, base:{min:opt.baseMin??0,max:opt.baseMax??0},
-    scalesWith:(type==='mag')?'SDM':'ATK', statCoef:Number.isFinite(CONFIG.STATCOEF_OVERRIDE)?CONFIG.STATCOEF_OVERRIDE:1.0 };
-  const r=computeAbilityDamage(a,t,fakeAbility);
-  return {hit:r.hit,dmg:r.dmg,crit:r.crit,dodged:r.dodged};
+  const type = opt.type || (a.kind==='mag' ? 'mag' : 'phys');
+  const fakeAbility = {
+    label: opt.verb || 'Attack',
+    type,
+    base: { min: opt.baseMin ?? 0, max: opt.baseMax ?? 0 },
+    scalesWith: (type === 'mag') ? 'SDM' : 'ATK'
+    // no statCoef anymore
+  };
+  const r = computeAbilityDamage(a,t,fakeAbility);
+  return { hit:r.hit, dmg:r.dmg, crit:r.crit, dodged:r.dodged };
 }
 
 /* ---------- procs on basic ---------- */
@@ -6034,7 +6056,7 @@ function mountLobbyInField(){
 
   // Header + name
   const header = el('div', { style:{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'8px' }});
-  header.appendChild(el('div', { style:{ fontWeight:'800', fontSize:'20px' }}, 'PvP Lobby'));
+  header.appendChild(el('div', { style:{ fontWeight:'800', fontSize:'28px' }}, 'PvP Lobby'));
   const nameWrap = el('div', { style:{ display:'flex', gap:'6px', alignItems:'center' }});
   nameWrap.appendChild(el('label', { style:{ fontSize:'12px', opacity:.9 }}, 'Your name:'));
   const nameInput = el('input', { id:'lobby-name', placeholder:'Type your name', value:(PVP.myName||PVP.playerName||'') });

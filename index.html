@@ -5320,7 +5320,7 @@ if (!root) { console.error('[Lobby] #battlefield not found — cannot mount lobb
     b.onclick = onClick; return b;
   };
   const createBtn = mkBtn('Create Room', async ()=>{ await connectWS(); send({ kind:'create_room' }); });
-  controls.appendChild(createBtn); controls.appendChild(quickBtn);
+  controls.appendChild(createBtn); 
 
   // Join by ID
   const joinWrap = el('div', { style:{ display:'flex', gap:'6px', alignItems:'center', justifyContent:'center' }});

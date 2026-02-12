@@ -1735,46 +1735,47 @@ t._refresh && t._refresh();
  {label:'Divine Shield', desc:'One ally takes no damage this round.', speed:'fast', type:'mag', target:'ally',
        use:(a,t)=>{ pushStatus(t,{key:'divine_shield', dur:1}); appendLog(`${a.name} acts heroically, ${t.name} is protected by Divine Shield.`); }},
 
-    {
+
+{
   label:'Cleanse',
   desc:'Remove ailments and heal small wounds.',
   speed:'normal', type:'mag', target:'ally',
   heal:{min:20,max:30}, healCoef:0.50, scalesWith:'SDM',
 
   use:function(a,t){
-  if (!t) return;
+    if (!t) return;
 
-  const removedA = cleanseCCAndDebuffs(t);   // your normal set
-  const removedB = removeStatusKey(t, 'bleed'); // add bleed just for this ability
-  const removed  = removedA || removedB;
+    const removedA = cleanseCCAndDebuffs(t);
+    const removedB = removeStatusKey(t, 'bleed');
+    const removed  = removedA || removedB;
 
-  // heal using this ability's numbers
-  const H = computeAbilityHeal(a, t, this);
-  const out = applyHealAmount(a, t, H, { abilityName: 'Cleanse', showVFX: false });
+    const H = computeAbilityHeal(a, t, this);
+    const out = applyHealAmount(a, t, H, { abilityName: 'Cleanse', showVFX: false });
 
-  if (t.hp > 0){
-    t._didKOVFX = false;
-    t._deadLogged = false;
-  }
+    if (t.hp > 0){
+      t._didKOVFX = false;
+      t._deadLogged = false;
+    }
 
-  vfxActCue?.(a, 'Cleanse');
+    vfxActCue?.(a, 'Cleanse');
 
-  if (removed){
-    vfxStatus?.(t, 'cleanse', { kind:'buff' });
-    vfxFlashColor?.(t, { color: 0xa7c4ff, ms: vfxMs(500), alpha: 0.20 });
-    vfxFloatText?.(t, 'CLEANSE', { ms: vfxMs(1100), fontSize: Math.floor(vfxScale(18)), color: (VFX_COL?.buff || '#a7c4ff') });
-  }
+    if (removed){
+      vfxStatus?.(t, 'cleanse', { kind:'buff' });
+      vfxFlashColor?.(t, { color: 0xa7c4ff, ms: vfxMs(500), alpha: 0.20 });
+      vfxFloatText?.(t, 'CLEANSE', { ms: vfxMs(1100), fontSize: Math.floor(vfxScale(18)), color: (VFX_COL?.buff || '#a7c4ff') });
+    }
 
-  const scene = getScene();
-  const delay = vfxMs((VFX?.STATUS_TO_HEAL_MS ?? 90) + (removed ? 90 : 0));
-  if (out.healed > 0){
-    if (scene?.time?.delayedCall) scene.time.delayedCall(delay, () => vfxHealImpact?.(a, t, out.healed, 'Cleanse'));
-    else vfxHealImpact?.(a, t, out.healed, 'Cleanse');
-  }
+    const scene = getScene();
+    const delay = vfxMs((VFX?.STATUS_TO_HEAL_MS ?? 90) + (removed ? 90 : 0));
+    if (out.healed > 0){
+      if (scene?.time?.delayedCall) scene.time.delayedCall(delay, () => vfxHealImpact?.(a, t, out.healed, 'Cleanse'));
+      else vfxHealImpact?.(a, t, out.healed, 'Cleanse');
+    }
 
-  const removedText = removed ? ' ailments removed,' : '';
-  appendLog(`${a.name} casts Cleanse on ${t.name}:${removedText} healed for ${out.healed}.`);
-},
+    const removedText = removed ? ' ailments removed,' : '';
+    appendLog(`${a.name} casts Cleanse on ${t.name}:${removedText} healed for ${out.healed}.`);
+  } 
+}, 
 
 
   {label:'Sanctify', desc:'Smite all enemies.', speed:'slow', type:'mag', target:'all-enemies',
@@ -4097,25 +4098,30 @@ function hit(a, t, opt={}, verb){
 }
 
   let dmgToApply = res.dmg;
-  if (a._echoing) dmgToApply = Math.floor(dmgToApply * (a._echoMult || CONFIG.ECHO_MULT || 1.05));
-  if (opt.dmgMult) dmgToApply = Math.floor(dmgToApply * opt.dmgMult);
+if (a._echoing) dmgToApply = Math.floor(dmgToApply * (a._echoMult || CONFIG.ECHO_MULT || 1.05));
+if (opt.dmgMult) dmgToApply = Math.floor(dmgToApply * opt.dmgMult);
+if (hasStatus(target,'marked') && dmgToApply>0){
+    dmgToApply = Math.floor(dmgToApply*(CONFIG.MARKED_MULT||1.8));
+  }
 
- if (hasStatus(target,'divine_shield') && dmgToApply > 0){
+// ✅ Determine attack type here (mag vs phys)
+const abType = res?._type || getAbilityType(a, ability);
+const isMag  = (abType === 'mag');
+
+// Divine Shield (all damage)
+if (hasStatus(target,'divine_shield') && dmgToApply > 0){
   const before = dmgToApply;
   dmgToApply = Math.max(1, Math.floor(dmgToApply * 0.25)); // 75% reduction
   appendLogHTML(`${target.name} is protected by <span style="color:#ffd700">Divine Shield</span>! Damage reduced (${before} → ${dmgToApply}).`);
 }
 
-if (type === 'mag' && hasStatus(target, 'magic_shield') && dmgToApply > 0){
-  const RED = 0.75; // 75% reduction
+// Arcane Ward (magic only)
+if (isMag && hasStatus(target, 'magic_shield') && dmgToApply > 0){
   const before = dmgToApply;
-  dmgToApply = Math.max(1, Math.floor(dmgToApply * (1 - RED)));
+  dmgToApply = Math.max(1, Math.floor(dmgToApply * 0.25)); // 75% reduction
   appendLogHTML(`${target.name} resists magic with <span style="color:#b084ff">Arcane Ward</span> (${before}→${dmgToApply}).`);
 }
 
-  if (hasStatus(target,'marked') && dmgToApply>0){
-    dmgToApply = Math.floor(dmgToApply*(CONFIG.MARKED_MULT||1.8));
-  }
   if (hasStatus(target,'guard') && dmgToApply>0){
     const pctFromStatus = target.status.find(s=>s.key==='guard')?.data?.pct;
     const guardPct = Number.isFinite(pctFromStatus) ? pctFromStatus : (window.GUARD_REDUCTION ?? 0.5);

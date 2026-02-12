@@ -5619,6 +5619,17 @@ function availableDraftPool(){
   return (PVP.pool || ALL_CLASSES || []).filter(job => !banned.has(job));
 }
 
+function rerenderDraftUI(){
+  // safe redraw helper (works even if overlay not mounted yet)
+  try {
+    if (document.getElementById('draft-overlay')) updateDraftUI();
+    else if (PVP?.phase === 'draft') mountDraftUI();
+  } catch (e) {
+    console.warn('rerenderDraftUI failed', e);
+  }
+}
+window.rerenderDraftUI = rerenderDraftUI;
+
 function applyBan(who, job){
   if (!job) return;
 
@@ -6066,13 +6077,16 @@ function handleNet(msg){
 case 'draft_ban': {
   applyBan(msg.who, msg.job);
 
-  if ((PVP.bansMe.length + PVP.bansOpp.length) >= BAN_ORDER.length){
-    PVP.draftStage = 'pick';
-  }
+  // ✅ remove banned job from pool so it disappears for both sides
+  PVP.pool = (PVP.pool || []).filter(j => j !== msg.job);
 
-  renderDraftUI?.();
+  const total = ((PVP.bansMe||[]).length + (PVP.bansOpp||[]).length);
+  PVP.draftStage = (total >= BAN_ORDER.length) ? 'pick' : 'ban';
+
+  rerenderDraftUI();
   break;
 }
+
 
 case 'round_choices': {
   ensureRoundBuf();
@@ -6121,25 +6135,31 @@ if (!PVP.roundBuf.host || !PVP.roundBuf.guest) {
     }
 
     // Match start (rooms flow)
-    case 'match': {
+case 'match': {
   PVP.roomId  = msg.roomId || PVP.roomId;
   PVP.role    = (msg.you === 'A') ? 'host' : 'guest';
   PVP.matchId = PVP.roomId;
 
+  // ---- reset draft state (including bans!) ----
   PVP.phase = 'draft';
-PVP.pool = [...ALL_CLASSES];
-PVP.picksMe = [];
-PVP.picksOpp = [];
-PVP.pickCount = 0;
+  PVP.pool = [...ALL_CLASSES];
 
-// A–B–B–A–B–A: host goes first
-const sideTurn = DRAFT_ORDER[PVP.pickCount]; // 'host'
-PVP.pickTurn = (sideTurn === PVP.role) ? 'me' : 'opp';
+  PVP.picksMe = [];
+  PVP.picksOpp = [];
+  PVP.pickCount = 0;
+
+  PVP.bansMe = [];
+  PVP.bansOpp = [];
+  PVP.draftStage = 'ban';   // ✅ start in ban stage
+
+  // (optional, not really needed anymore)
+  PVP.pickTurn = 'opp';
 
   unmountLobbyInField && unmountLobbyInField();
   mountDraftUI();
-  updateDraftUI();
-  appendLog('[PvP] Match ready. Draft begins.');
+  rerenderDraftUI();
+
+  appendLog('[PvP] Match ready. Draft begins (ban phase).');
   break;
 }
 

@@ -436,7 +436,7 @@ const choice=(arr)=> arr[(rand()*arr.length)|0];
 
 /* ---------- config ---------- */
 const CONFIG = {
-  BASE_HP: 55, HP_PER_TGH: 24,
+  BASE_HP: 100, HP_PER_TGH: 25,
   ATK_PER_STR: 1.5, SDM_PER_INT: 1.5,
   DEF_FROM_TGH: 0.75, DEF_FROM_QKN: 0.5,
 
@@ -861,13 +861,18 @@ if ((this.usesMax|0) > 0 && !spendUse(a, this)) {
 
       // ---- CLEANSE ALL NEGATIVES ----
       // Your engine doesn't tag statuses with "kind", so we need an explicit list.
-      // Add/remove keys here as your game grows.
-      const NEGATIVE_KEYS = new Set([
-        'stun','taunt','blind','berserk',
-        'def_down','poison','bleed',
-        'marked'
-        // add more negative keys here as needed
-      ]);
+ const NEGATIVE_KEYS = new Set([
+  'stun','taunt','blind','berserk',
+  'def_down','poison','bleed',
+  'marked'
+]);
+
+const POSITIVE_KEYS = new Set([
+  'def_up','atk_up','sdm_up',
+  'guard','divine_shield','shield_redirect','counter','premonition',
+  'arcane_echo',
+  'invisible','shift','shinobi_haste'
+]);
 
       const beforeN = (a.status || []).length;
 a.status = (a.status || []).filter(s => !NEGATIVE_KEYS.has(s.key));
@@ -948,23 +953,18 @@ const removed = beforeN - a.status.length;
 /* ===== Shinobi ===== */
 case 'Shinobi': return [
 
-  /* 1) Attack (fast) — chance to proc double strike
-     - If shinobi_haste: +1 guaranteed extra swing
-     - Each swing has its own proc roll (max 4 hits)
-  */
-  {
-    label: 'Attack',
-    desc: 'Shuriken attack. Chance to double strike.',
-    speed: 'medium', type: 'phys', target: 'enemy',
-    base: { min: 40, max: 65 }, statCoef: 0.45, isBasic: true,
+{
+  label: 'Attack',
+  desc: 'Shuriken attack. Chance to double strike.',
+  speed: 'medium', type: 'phys', target: 'enemy',
+  base: { min: 40, max: 65 }, statCoef: 0.45, isBasic: true,
+  procChance: 0.65,
 
-    procChance: 0.65,
-
-    use: function(a, t){
+  use: function(a, t){
   if (!t || !t.alive?.()) return;
 
   const hasteOn = hasStatus(a, 'shinobi_haste');
-  const swings = 1 + (hasteOn ? 1 : 0);
+  const swings  = 1 + (hasteOn ? 1 : 0); // 1 or 2 base swings
 
   vfxActCue?.(a, this.label);
   vfxProjectile?.(a, t, { ms: 220, color: 0xc9c9ff, radius: 4 });
@@ -972,38 +972,28 @@ case 'Shinobi': return [
   let hits = 0;
   let procHits = 0;
 
-  const scene = getScene?.();
-  const hitGap = (typeof vfxMs === 'function') ? vfxMs(110) : 150; // tiny spacing between hit VFX
-
-  // Pre-roll proc outcomes deterministically (still uses your rand/chance in order)
-  const plan = [];
-  for (let i = 0; i < swings; i++){
-    plan.push({ kind: 'base' });
-    // proc check happens after base hit, same as your logic
-    plan.push({ kind: 'proc', do: chance(this.procChance) });
-  }
-
-  // Execute immediately for mechanics, but schedule "impact feel" callouts
-  // IMPORTANT: hit() should already be doing the actual damage+numbers.
-  // We're only spacing out the FEEL and combo tag.
-  let stepIndex = 0;
-
   for (let i = 0; i < swings; i++){
     if (!t.alive?.()) break;
 
+    // Base hit (may dodge)
     hit(a, t, { ability: this });
     hits++;
-    stepIndex++;
 
-    if (t.alive?.() && chance(this.procChance)){
+    if (!t.alive?.()) break;
+
+    // ALWAYS roll proc exactly once per swing (even if base dodged)
+    const doProc = chance(this.procChance);
+    if (doProc && t.alive?.()){
       hit(a, t, { ability: this });
       hits++;
       procHits++;
-      stepIndex++;
     }
   }
 
-  // Combo callouts once per action (at the end, slightly delayed so it reads well)
+  // Cosmetic combo callout (unchanged)
+  const scene = getScene?.();
+  const hitGap = (typeof vfxMs === 'function') ? vfxMs(110) : 150;
+
   const doComboPop = () => {
     if (!t.alive?.()) return;
 
@@ -1014,10 +1004,8 @@ case 'Shinobi': return [
       vfxFloatText?.(t, `4 HIT SUPER COMBO!`, { ms: vfxMs?.(1250) ?? 1500, fontSize: 24, color: '#ffd37a' });
       vfxFlashColor?.(t, { color: 0xffd37a, ms: vfxMs?.(240) ?? 240, alpha: 0.18 });
     } else if (procHits > 0){
-      // still show a smaller proc-only tag if you want
       vfxFloatText?.(t, `COMBO!`, { ms: vfxMs?.(1000) ?? 1000, fontSize: 16, color: '#c9c9ff' });
     }
-
   };
 
   const comboDelay = Math.max(0, (hits - 1)) * hitGap;
@@ -1025,7 +1013,7 @@ case 'Shinobi': return [
   else doComboPop();
 }
 
-  },
+},
 
   /* 2) Thief’s Haste (slow) — refreshable */
   {
@@ -1244,6 +1232,26 @@ case 'Warrior': return [
   }
 },
 
+{
+  label:'Last Stand',
+  desc:'Dig in: guard and bolster defense, then recover a bit of HP.',
+  speed:'fast', type:'phys', target:'self',
+  use:function(a){
+    const defDur   = 3;
+    const guardDur = 2;
+
+    pushStatus(a, { key:'def_up', dur:defDur });
+    pushStatus(a, { key:'guard',  dur:guardDur, data:{ pct:0.45 } });
+
+    const healAmt = Math.max(1, Math.floor(a.maxHP * 0.10));
+    const out = applyHealAmount(a, a, healAmt, { abilityName:'Last Stand', showVFX:true });
+
+    vfxActCue?.(a, 'Last Stand');
+    appendLogHTML?.(`<span style="color:#a7c4ff">🛡️ ${a.name} makes a <b>Last Stand</b>: DEF↑ (${defDur}), GUARD (${guardDur}), heals ${out.healed}.</span>`)
+      || appendLog(`${a.name} makes a Last Stand: DEF↑ (${defDur}), GUARD (${guardDur}), heals ${out.healed}.`);
+  }
+},
+
 
   {label:'Power Strike', desc:'Slow, potentially heavy blow.', speed:'slow', type:'phys', target:'enemy',
    base:{min:90,max:150}, statCoef:0.60,
@@ -1284,7 +1292,23 @@ case 'Warrior': return [
        use:function(a,t){ const r=hit(a,t,{ability:this});
          if(t.alive()){ const dur=buffDurBySDM(a); pushStatus(t,{key:'def_down', dur}); appendLog(`${t.name}’s defense is lowered (${dur}).`);} return r; } },
 
-      {label:'War Cry', desc:'Damage all enemies and lower their defense.', speed:'normal', type:'mag', target:'all-enemies',
+      {
+  label:'Bloodlust',
+  desc:'Enter a frenzy: ATK↑ but your defense drops.',
+  speed:'normal', type:'phys', target:'self',
+  use:function(a){
+    const atkDur = 5;
+    const defDur = 3;
+
+    pushStatus(a, { key:'atk_up', dur:atkDur });
+    pushStatus(a, { key:'def_down', dur:defDur });
+
+    vfxActCue?.(a, 'Bloodlust');
+    appendLogHTML?.(`<span style="color:#ff927a">🪓 ${a.name} enters <b>Bloodlust</b>: ATK↑ (${atkDur}), DEF↓ (${defDur}).</span>`)
+      || appendLog(`${a.name} enters Bloodlust: ATK↑ (${atkDur}), DEF↓ (${defDur}).`);
+  }
+}, 
+{label:'War Cry', desc:'Damage all enemies and lower their defense.', speed:'normal', type:'mag', target:'all-enemies',
        base:{min:10,max:25}, statCoef:0.25,
        use:function(a,arr){ for(const t of arr){ if(!t.alive()) continue; hit(a,t,{ability:this}); }
          const dur=buffDurBySDM(a); for(const t of arr){ if(!t.alive()) continue; pushStatus(t,{key:'def_down', dur}); }
@@ -1335,6 +1359,24 @@ case 'Warrior': return [
          }
          return r;
        }},
+
+{
+  label:'Expose',
+  desc:'Quick cut that marks the target for increased damage.',
+  speed:'fast', type:'phys', target:'enemy',
+  base:{min:25,max:40}, statCoef:0.25,
+  use:function(a,t){
+    if (!t?.alive?.()) return;
+    const r = hit(a, t, { ability:this });
+
+    if (t.alive?.() && !r.dodged && (r.dealt|0) > 0){
+      pushStatus(t, { key:'marked', dur:2 });
+      appendLogHTML?.(`<span style="color:#ffd37a">🎯 ${t.name} is <b>marked</b> (2).</span>`)
+        || appendLog(`${t.name} is marked (2).`);
+    }
+    return r;
+  }
+},
 
       {label:'Shadowstep', desc:'Strike quickly and defend.', speed:'fast', type:'phys', target:'enemy',
        base:{min:35,max:65}, statCoef:0.30,
@@ -1523,6 +1565,25 @@ if (wasPoisoned){
   },
 
 {
+  label:'Guardian Angel',
+  desc:'Shield an ally from all damage this round and heal minor wounds.',
+  speed:'fast', type:'mag', target:'ally',
+  heal:{min:18,max:30}, healCoef:0.25, scalesWith:'SDM',
+  use:function(a,t){
+    if (!t) return;
+
+    pushStatus(t, { key:'divine_shield', dur:1 });
+
+    const H = computeAbilityHeal(a, t, this);
+    const out = applyHealAmount(a, t, H, { abilityName:'Guardian Angel', showVFX:true });
+
+    vfxActCue?.(a, 'Guardian Angel');
+    appendLogHTML?.(`<span style="color:#a7c4ff">✝ ${a.name} calls a <b>Guardian Angel</b> on ${t.name}: Divine Shield (1), healed ${out.healed}.</span>`)
+      || appendLog(`${a.name} shields ${t.name}: Divine Shield (1), healed ${out.healed}.`);
+  }
+},
+
+{
   label: 'Resurrection',
   desc: 'Revive a fallen ally (once) or heal if alive.',
   speed: 'slow', type: 'mag', target: 'ally',
@@ -1621,7 +1682,32 @@ a._rezUsed = true;
    return r;
  }},
 
-      {label:'Fireball', desc:'Large fireball that scorches all foes.', speed:'slow', type:'mag', target:'all-enemies',
+      {
+  label:'Chain Spark',
+  desc:'Fast arcane sparks strike all enemies. Small chance to daze one target.',
+  speed:'fast', type:'mag', target:'all-enemies',
+  base:{min:18,max:35}, statCoef:0.30,
+  use:function(a, arr){
+    const targets = (arr || []).filter(t => t?.alive?.());
+    if (!targets.length) return;
+
+    vfxActCue?.(a, 'Chain Spark');
+
+    // Light AoE damage (use hit for consistency)
+    for (const t of targets){
+      hit(a, t, { ability:this });
+    }
+
+    // Small CC on exactly one enemy (deterministic target pick: first alive in canonical order)
+    // No RNG = no desync risk. If you WANT RNG, I can do it safely too.
+    const pick = targets[0];
+    if (pick?.alive?.() && rand() < 0.20){
+      const dur = 1;
+      applyStatusWithLog(pick, 'stun', dur, '#b084ff', `${a.name}'s Chain Spark dazes ${pick.name} for {dur} rounds!`, a);
+    }
+  }
+},
+{label:'Fireball', desc:'Large fireball that scorches all foes.', speed:'slow', type:'mag', target:'all-enemies',
        base:{min:65,max:125}, statCoef:0.50, defPen:0.20,
        use:function(a,arr){ for(const t of arr){ if(!t.alive()) continue; hit(a,t,{ability:this}); } } },
 
@@ -1694,7 +1780,32 @@ a._rezUsed = true;
        use:function(a,arr){ for(const t of arr){ if(!t.alive()) continue; hit(a,t,{ability:this}); } } },
 
       {label:'Divine Shield', desc:'One ally takes no damage this round.', speed:'fast', type:'mag', target:'ally',
-       use:(a,t)=>{ pushStatus(t,{key:'divine_shield', dur:1}); appendLog(`${a.name} acts heroically, ${t.name} is protected by Divine Shield.`); }}
+       use:(a,t)=>{ pushStatus(t,{key:'divine_shield', dur:1}); appendLog(`${a.name} acts heroically, ${t.name} is protected by Divine Shield.`); }},
+
+{
+  label:'Judgment',
+  desc:'Smite a foe. Deals bonus damage if they are afflicted.',
+  speed:'slow', type:'mag', target:'enemy',
+  base:{min:70,max:110}, statCoef:0.55, defPen:0.10,
+
+  use:function(a,t){
+    if (!t?.alive?.()) return;
+
+    const afflicted =
+      hasStatus(t,'poison') || hasStatus(t,'bleed') || hasStatus(t,'def_down') ||
+      hasStatus(t,'marked') || hasStatus(t,'blind') || hasStatus(t,'berserk') || hasStatus(t,'taunt') || hasStatus(t,'stun');
+
+    // Use hit() but apply a deterministic multiplier via opt.dmgMult (your hit supports it)
+    const mult = afflicted ? 1.25 : 1.0;
+    const r = hit(a, t, { ability:this, dmgMult: mult });
+
+    if (afflicted && t.alive?.()){
+      appendLogHTML?.(`<span style="color:#ffd37a">⚔️ Judgment burns brighter — bonus damage vs afflicted target.</span>`);
+    }
+    return r;
+  }
+}
+
     ];
 
     /* ===== Archer ===== */
@@ -1748,7 +1859,26 @@ a._rezUsed = true;
        use:(a,t)=>{ if(!t.alive()) return appendLog(`${t.name} is already down.`);
          pushStatus(t,{key:'marked', dur:2});
          appendLogHTML(`${a.name} targets ${t.name} with <b>Hunter's Mark</b>. <span style="color:#ffd37a">${t.name} is now very susceptible to damage!</span>`);
-       }}
+       }},
+
+{
+  label:'Cover Fire',
+  desc:'A precise shot with a chance to stun for 1 round.',
+  speed:'normal', type:'phys', target:'enemy',
+  base:{min:40,max:75}, statCoef:0.45,
+
+  use:function(a,t){
+    if (!t?.alive?.()) return;
+    const r = hit(a, t, { ability:this });
+
+    if (t.alive?.() && !r.dodged && (r.dealt|0) > 0 && rand() < 0.35){
+      const dur = 1;
+      applyStatusWithLog(t, 'stun', dur, '#b084ff', `${t.name} is pinned and stunned for {dur} rounds!`, a);
+    }
+    return r;
+  }
+}
+
     ];
 
     /* ===== Monk ===== */
@@ -1779,7 +1909,25 @@ a._rezUsed = true;
  }},
 
       {label:'Counterstance', desc:'Guard and counter basic attacks from cast until end of next turn.', speed:'fast', type:'phys', target:'self',
-       use:(a)=>{ pushStatus(a,{key:'guard', dur:2, data:{ pct:0.40 }}); pushStatus(a,{key:'counter', dur:1}); appendLog(`${a.name} adopts a counter stance.`); }}
+       use:(a)=>{ pushStatus(a,{key:'guard', dur:2, data:{ pct:0.40 }}); pushStatus(a,{key:'counter', dur:1}); appendLog(`${a.name} adopts a counter stance.`); }},
+
+{
+  label:'Iron Body',
+  desc:'Fortify yourself: DEF↑ and minor Guard for a short time.',
+  speed:'fast', type:'phys', target:'self',
+  use:function(a){
+    const defDur = 4;
+    const guardDur = 3;
+
+    pushStatus(a, { key:'def_up', dur:defDur });
+    pushStatus(a, { key:'guard', dur:guardDur, data:{ pct:0.25 } });
+
+    vfxActCue?.(a, 'Iron Body');
+    appendLogHTML?.(`<span style="color:#a7c4ff">🥋 ${a.name} hardens their body: DEF↑ (${defDur}), Guard (${guardDur}).</span>`)
+      || appendLog(`${a.name} hardens their body: DEF↑ (${defDur}), Guard (${guardDur}).`);
+  }
+}
+
     ];
 
     /* ===== Necromancer ===== */
@@ -1895,6 +2043,39 @@ a._rezUsed = true;
   }
 },
 
+{
+  label:'Grave Hex',
+  desc:'Hex the foe: strip one beneficial effect and infect with poison.',
+  speed:'fast', type:'mag', target:'enemy',
+  base:{min:35,max:55}, statCoef:0.30,
+
+  use:function(a,t){
+    if (!t?.alive?.()) return;
+
+    // Small hit first (so dodge matters)
+    const r = hit(a, t, { ability:this });
+
+    if (!t.alive?.()) return r;
+    if (r.dodged || (r.dealt|0) <= 0) return r;
+
+    // Deterministic buff strip (no RNG)
+    const removed = stripOnePositive ? stripOnePositive(t) : null;
+
+    // Add a small poison amount based on damage dealt (simple, readable)
+    const poisonAmt = Math.max(1, Math.floor((r.dealt|0) * 0.60));
+    addPoison(t, poisonAmt);
+
+    if (removed){
+      appendLogHTML?.(`<span style="color:#a7c4ff">☠ ${a.name} hexes ${t.name}: removed <b>${removed}</b>, poisoned (+${poisonAmt}).</span>`)
+        || appendLog(`${a.name} hexes ${t.name}: removed ${removed}, poisoned (+${poisonAmt}).`);
+    } else {
+      appendLogHTML?.(`<span style="color:#a7c4ff">☠ ${a.name} hexes ${t.name}: poisoned (+${poisonAmt}).</span>`)
+        || appendLog(`${a.name} hexes ${t.name}: poisoned (+${poisonAmt}).`);
+    }
+
+    return r;
+  }
+},
 
 {
   label:'Plague',
@@ -2171,6 +2352,35 @@ a._rezUsed = true;
       {label:'Mental Breakdown', desc:'Crushing psychic blow.', speed:'slow', type:'mag', target:'enemy',
        base:{min:90,max:120}, scalesWith:'SDM', statCoef:0.55,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
+
+{
+  label:'Mind Shatter',
+  desc:'Psychic blast. If the target resists control, their defense collapses.',
+  speed:'slow', type:'mag', target:'enemy',
+  base:{min:55,max:95}, scalesWith:'SDM', statCoef:0.45,
+
+  use:function(a,t){
+    if (!t?.alive?.()) return;
+
+    // Damage first
+    const r = hit(a, t, { ability:this });
+    if (!t.alive?.()) return r;
+
+    // Follow-up: either a light CC chance or a guaranteed DEF↓ if CC fails
+    const ccChance = 0.25;
+    if (!r.dodged && (r.dealt|0) > 0 && rand() < ccChance){
+      const dur = 1;
+      applyStatusWithLog(t, 'stun', dur, '#b084ff', `${t.name} reels from Mind Shatter and is stunned for {dur} rounds!`, a);
+    } else {
+      const dur = 2;
+      pushStatus(t, { key:'def_down', dur });
+      appendLogHTML?.(`<span style="color:#ffd37a">🧠 ${t.name}'s defenses crumble (DEF↓ ${dur}).</span>`)
+        || appendLog(`${t.name}'s defenses crumble (DEF↓ ${dur}).`);
+    }
+
+    return r;
+  }
+},
 
       {label:'Premonition', desc:'All ally actions become fast next two rounds.', speed:'fast', type:'mag', target:'all-allies',
        use:(a,arr)=>{ for (const ally of arr){ if(ally.alive()) pushStatus(ally,{key:'premonition', dur:3}); }
@@ -3377,6 +3587,20 @@ function tryShrug(u, key){
   return true;
 }
 
+function stripOnePositive(u){
+  if (!u?.status?.length) return null;
+  for (let i = 0; i < u.status.length; i++){
+    const k = u.status[i]?.key;
+    if (POSITIVE_KEYS.has(k)){
+      u.status.splice(i, 1);          // deterministic: first found
+      updateStatusView?.(u);
+      u._refresh?.();
+      return k;
+    }
+  }
+  return null;
+}
+
 function applyHeal(caster, target, healSpecOrAbility, {
   label = 'Heal',
   showVFX = true,
@@ -3811,7 +4035,7 @@ const VFX = {
 
   // Global knobs (COSMETIC ONLY)
   TIME_SCALE: 1.85,
-  GLOBAL_SCALE: 1.20,
+  GLOBAL_SCALE: 1.25,
   AOE_STAGGER_MS: 150,
   STATUS_TO_HEAL_MS: 125,
 

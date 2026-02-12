@@ -113,14 +113,18 @@
     #action-bar-right{ grid-column: 2; }
 
 #action-bar-right{
-  align-items: stretch; /* instead of centering the child */
+  display:flex;
+  align-items:center;
+  justify-content:center;
 }
+
 #action-bar-right img{
   width: 100%;
   height: 100%;
-  display: contain;
+  object-fit: cover;      /* fills, but may crop */
+  image-rendering: pixelated;
+  display:block;
 }
-
 
     /* Action bar inner shell */
     #action-bar-inner{
@@ -378,7 +382,7 @@ function setStaticRightPanelImage(url){
   img.draggable = false;
   img.style.width = '130%';
   img.style.height = '130%';
-  img.style.objectFit = 'stretch';
+  img.style.objectFit = 'contain';
   img.style.imageRendering = 'pixelated';
   img.style.display = 'block';
 
@@ -705,7 +709,7 @@ case 'Electromancer': return [
     speed: 'fast', type: 'phys', target: 'enemy',
     base: { min: 18, max: 28 }, statCoef: 0.45, isBasic: true,
 
-    stunChance: 0.15,
+    stunChance: 0.25,
 
     use: function(a, t){
       if (!t || !t.alive()) return;
@@ -726,8 +730,8 @@ case 'Electromancer': return [
   desc: 'Zap enemies and energize allies. Small chance to disorient enemies.',
   speed: 'fast', type: 'mag', target: 'all-enemies',
 
-  base: { min: 1, max: 4 }, statCoef: 0.05,
-  heal: { min: 1, max: 4 }, healCoef: 0.10, scalesWith: 'SDM',
+  base: { min: 5, max: 15 }, statCoef: 0.05,
+  heal: { min: 5, max: 15 }, healCoef: 0.10, scalesWith: 'SDM',
 
   stunChance: 0.15,
 
@@ -920,7 +924,7 @@ const removed = beforeN - a.status.length;
   label: 'Power Surge',
   desc: 'Empower all allies with ATK↑ (stacks).',
   speed: 'slow', type: 'mag', target: 'all-allies',
-  dur: 3,
+  dur: 4,
 
   use: function(a, allies){
     const list = Array.isArray(allies) ? allies.filter(u => u && u.alive()) : [];
@@ -952,9 +956,9 @@ case 'Shinobi': return [
     label: 'Attack',
     desc: 'Shuriken attack. Chance to double strike.',
     speed: 'medium', type: 'phys', target: 'enemy',
-    base: { min: 30, max: 60 }, statCoef: 0.45, isBasic: true,
+    base: { min: 40, max: 65 }, statCoef: 0.45, isBasic: true,
 
-    procChance: 0.60,
+    procChance: 0.65,
 
     use: function(a, t){
   if (!t || !t.alive?.()) return;
@@ -969,7 +973,7 @@ case 'Shinobi': return [
   let procHits = 0;
 
   const scene = getScene?.();
-  const hitGap = (typeof vfxMs === 'function') ? vfxMs(110) : 110; // tiny spacing between hit VFX
+  const hitGap = (typeof vfxMs === 'function') ? vfxMs(110) : 150; // tiny spacing between hit VFX
 
   // Pre-roll proc outcomes deterministically (still uses your rand/chance in order)
   const plan = [];
@@ -1004,14 +1008,14 @@ case 'Shinobi': return [
     if (!t.alive?.()) return;
 
     if (hits === 3){
-      vfxFloatText?.(t, `3 HIT COMBO!`, { ms: vfxMs?.(1100) ?? 1100, fontSize: 20, color: '#c9c9ff' });
+      vfxFloatText?.(t, `3 HIT COMBO!`, { ms: vfxMs?.(1100) ?? 1250, fontSize: 20, color: '#c9c9ff' });
       vfxFlashColor?.(t, { color: 0xc9c9ff, ms: vfxMs?.(220) ?? 220, alpha: 0.18 });
     } else if (hits >= 4){
-      vfxFloatText?.(t, `4 HIT SUPER COMBO!`, { ms: vfxMs?.(1250) ?? 1250, fontSize: 24, color: '#ffd37a' });
+      vfxFloatText?.(t, `4 HIT SUPER COMBO!`, { ms: vfxMs?.(1250) ?? 1500, fontSize: 24, color: '#ffd37a' });
       vfxFlashColor?.(t, { color: 0xffd37a, ms: vfxMs?.(240) ?? 240, alpha: 0.18 });
     } else if (procHits > 0){
       // still show a smaller proc-only tag if you want
-      vfxFloatText?.(t, `COMBO!`, { ms: vfxMs?.(1000) ?? 1000, fontSize: 15, color: '#c9c9ff' });
+      vfxFloatText?.(t, `COMBO!`, { ms: vfxMs?.(1000) ?? 1000, fontSize: 16, color: '#c9c9ff' });
     }
 
   };
@@ -1027,7 +1031,7 @@ case 'Shinobi': return [
   {
     label:"Thief's Haste",
     desc:'Gain an additional basic attack for the next 3 rounds.',
-    speed:'slow', type:'mag', target:'self',
+    speed:'medium', type:'mag', target:'self',
     use:function(a){
       const dur = 4;
       removeStatusKey(a,'shinobi_haste');
@@ -1064,7 +1068,7 @@ case 'Shinobi': return [
     label: 'Bleed',
     desc: 'Strike and inflict Bleed: 15% current HP at end of round for 4 rounds.',
     speed: 'medium', type: 'phys', target: 'enemy',
-    base: { min: 22, max: 36 }, statCoef: 0.45,
+    base: { min: 35, max: 45 }, statCoef: 0.45,
     pct: 0.15,
 
     use: function(a, t){
@@ -1120,7 +1124,7 @@ if ((this.usesMax|0) > 0 && !spendUse(a, this)) {
       checkHPWarnings?.(a);
 
       vfxActCue?.(a, this.label);
-      vfxFlashColor?.(a, { color: 0x57ff7a, ms: vfxMs(320), alpha: 0.22 });
+      vfxFlashColor?.(a, { color: 0x57ff7a, ms: vfxMs(1000), alpha: 0.22 });
       if (healed > 0) vfxHealImpact?.(a, a, healed, this.label);
       vfxFloatText?.(a, `POTION (${getUsesLeft(a, this)} left)`, {
   ms: vfxMs(1200), fontSize: 13, color: (VFX_COL?.buff || '#a7c4ff')
@@ -1199,7 +1203,7 @@ if ((this.usesMax|0) > 0 && !spendUse(a, this)) {
     /* ===== Warrior ===== */
 case 'Warrior': return [
   {label:'Attack', desc:'Good old sword and board.', speed:'normal', type:'phys', target:'enemy',
-   base:{min:65,max:75}, statCoef:0.35, isBasic:true,
+   base:{min:75,max:95}, statCoef:0.35, isBasic:true,
    use:function(a,t){ return hit(a,t,{ability:this}); } },
 
 {
@@ -1208,13 +1212,13 @@ case 'Warrior': return [
   speed:'slow', type:'mag', target:'self',
 
   use:function(a){
-    const atkDur = 3;
+    const atkDur = 5;
     pushStatus(a, { key:'atk_up', dur: atkDur });
 
     const preDur = 2;
     pushStatus(a, { key:'premonition', dur: preDur });
 
-    const healSpec = { heal:{ min:15, max:25 }, healCoef:0.18, scalesWith:'ATK', type:'mag' };
+    const healSpec = { heal:{ min:20, max:30 }, healCoef:0.18, scalesWith:'ATK', type:'mag' };
     const H = computeAbilityHeal(a, a, healSpec);
 
     const before = a.hp;
@@ -1229,7 +1233,7 @@ case 'Warrior': return [
 
     // Heal VFX slightly after (still fine)
     const scene = getScene();
-    const delay = vfxMs(VFX?.STATUS_TO_HEAL_MS ?? 90);
+    const delay = vfxMs(VFX?.STATUS_TO_HEAL_MS ?? 150);
     if (healed > 0){
       const doHealVFX = () => vfxHealImpact?.(a, a, healed, 'Warhorn');
       if (scene?.time?.delayedCall) scene.time.delayedCall(delay, doHealVFX);
@@ -1242,7 +1246,7 @@ case 'Warrior': return [
 
 
   {label:'Power Strike', desc:'Slow, potentially heavy blow.', speed:'slow', type:'phys', target:'enemy',
-   base:{min:80,max:140}, statCoef:0.60,
+   base:{min:90,max:150}, statCoef:0.60,
    use:function(a,t){ return hit(a,t,{ability:this}); } },
 
   {label:'Insult', desc:'Taunt an enemy into attacking you.', speed:'normal', type:'phys', target:'enemy',
@@ -1261,7 +1265,7 @@ case 'Warrior': return [
   {label:'Shieldwall', desc:'Allies gain mitigation; intercept first hit.', speed:'fast', type:'phys', target:'all-allies',
    use:(a,arr)=>{
      for (const ally of arr){
-       pushStatus(ally, { key:'guard', dur:1, data:{ pct:(CONFIG.SHIELDWALL_GUARD||0.20) }});
+       pushStatus(ally, { key:'guard', dur:1, data:{ pct:(CONFIG.SHIELDWALL_GUARD||0.25) }});
      }
      pushStatus(a, { key:'shield_redirect', dur:1, data:{ remaining:1 }});
      appendLogHTML(`${a.name} raises <b>Shieldwall</b> to protect the team!`);
@@ -1272,11 +1276,11 @@ case 'Warrior': return [
     /* ===== Barbarian ===== */
     case 'Barbarian': return [
       {label:'Attack', desc:'A consistently strong basic attack.', speed:'normal', type:'phys', target:'enemy',
-       base:{min:70,max:90}, statCoef:0.40, isBasic:true,
+       base:{min:70,max:100}, statCoef:0.40, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Rend', desc:'Expose your target’s weakness.', speed:'slow', type:'phys', target:'enemy',
-       base:{min:70,max:120}, statCoef:0.35,
+       base:{min:70,max:135}, statCoef:0.35,
        use:function(a,t){ const r=hit(a,t,{ability:this});
          if(t.alive()){ const dur=buffDurBySDM(a); pushStatus(t,{key:'def_down', dur}); appendLog(`${t.name}’s defense is lowered (${dur}).`);} return r; } },
 
@@ -1287,7 +1291,7 @@ case 'Warrior': return [
          appendLog(`All enemies’ defense is reduced (${dur}).`); } },
 
      {label:'Smash', desc:'Crushing blow with chance to stun.', speed:'slow', type:'phys', target:'enemy',
- base:{min:70,max:115}, statCoef:0.55,
+ base:{min:70,max:145}, statCoef:0.55,
  use:function(a,t){
    const r=hit(a,t,{ability:this});
    if(t.alive() && rand()<0.25){
@@ -1298,7 +1302,7 @@ case 'Warrior': return [
  }},
 
       {label:'Rampage', desc:'Swing that grants rampage on killshot.', speed:'normal', type:'phys', target:'enemy',
-       base:{min:75,max:110}, statCoef:0.45,
+       base:{min:95,max:115}, statCoef:0.45,
        use:function(a,t){
          const hpBefore = t.hp;
          const r = hit(a,t,{ability:this});
@@ -1314,15 +1318,15 @@ case 'Warrior': return [
     /* ===== Rogue ===== */
     case 'Rogue': return [
       {label:'Backstab', desc:'Go for the vitals.', speed:'slow', type:'phys', target:'enemy',
-       base:{min:60,max:100}, statCoef:0.40, critBonus:0.95,
+       base:{min:65,max:130}, statCoef:0.40, critBonus:1.35,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Attack', desc:'Hard slice at your enemy.', speed:'fast', type:'phys', target:'enemy',
-       base:{min:35,max:70}, statCoef:0.45, isBasic:true,
+       base:{min:45,max:80}, statCoef:0.45, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Poison Dagger', desc:'Cover your blade with poison for this attack.', speed:'normal', type:'phys', target:'enemy',
-       base:{min:30,max:55}, statCoef:0.30,
+       base:{min:45,max:65}, statCoef:0.30,
        use:function(a,t){
          const r = hit(a,t,{ability:this});
          if (t.alive() && r.dealt > 0){
@@ -1333,7 +1337,7 @@ case 'Warrior': return [
        }},
 
       {label:'Shadowstep', desc:'Strike quickly and defend.', speed:'fast', type:'phys', target:'enemy',
-       base:{min:35,max:45}, statCoef:0.30,
+       base:{min:35,max:65}, statCoef:0.30,
        use:function(a,t){
          const r = hit(a,t,{ability:this});
          const dur = buffDurBySDM(a);
@@ -1344,7 +1348,7 @@ case 'Warrior': return [
 
         {
        label:'Smoke Bomb',
-       desc:'Blind all enemies this round and heal for 15% of max HP.',
+       desc:'Blind all enemies this round and heal for 18% of max HP.',
        speed:'fast', type:'mag', target:'all-enemies',
 
        use:function(a, arr){
@@ -1364,7 +1368,7 @@ case 'Warrior': return [
 
            vfxCastToTargets?.(a, targets, {
              label: 'Smoke Bomb',
-             proj: { ms: (VFX?.PROJ_MS ?? 750) * 0.85, color: (VFX?.CC_HEX ?? 0xb084ff), radius: 7 },
+             proj: { ms: (VFX?.PROJ_MS ?? 1000) * 0.85, color: (VFX?.CC_HEX ?? 0xb084ff), radius: 7 },
              onImpact: (t) => {
                const doTag = () => vfxHardCC?.(a, t, 'blind', { ms: 800, showOrigin: false });
                if (scene?.time?.delayedCall) scene.time.delayedCall(extraTagDelay, doTag);
@@ -1374,8 +1378,8 @@ case 'Warrior': return [
            });
          } catch {}
 
-         // --- MECHANICS: self-heal 15% max HP (unchanged) ---
-         const healAmt = Math.max(1, Math.floor(a.maxHP * 0.15));
+         // --- MECHANICS: self-heal 18% max HP (unchanged) ---
+         const healAmt = Math.max(1, Math.floor(a.maxHP * 0.18));
          const out = applyHealAmount(a, a, healAmt, { abilityName: 'Smoke Bomb' });
 
          appendLogHTML(`${a.name} throws <b>Smoke Bomb</b>! ${n} foe(s) are blinded. ${a.name} recovers ${out.healed} HP.`);
@@ -1391,7 +1395,7 @@ case 'Cleric': return [
   label: 'Defensive Aura',
   desc: 'Quickly heal an ally and bolster their defense.',
   speed: 'fast', type: 'mag', target: 'ally',
-  heal: { min: 25, max: 45 }, healCoef: 0.25, scalesWith: 'SDM',
+  heal: { min: 35, max: 55 }, healCoef: 0.25, scalesWith: 'SDM',
 
   use: function(a, t){
     if (!t) return;
@@ -1419,13 +1423,13 @@ case 'Cleric': return [
     label: 'Attack',
     desc: 'Basic strike with a holy mace.',
     speed: 'normal', type: 'phys', target: 'enemy',
-    base: { min: 10, max: 20 }, statCoef: 0.75, isBasic: true,
+    base: { min: 15, max: 30 }, statCoef: 0.75, isBasic: true,
     use: function(a, t){ return hit(a, t, { ability: this }); }
   },
 
 {
   label: `Enid's Blessing`,
-  desc: 'Heal all allies and cure poison.',
+  desc: 'Heal all allies and cure their poison.',
   speed: 'slow', type: 'mag', target: 'all-allies',
   heal: { min: 25, max: 55 }, healCoef: 0.40, scalesWith: 'SDM',
   use: function(a, arr){
@@ -1514,7 +1518,7 @@ if (wasPoisoned){
     label: 'Piercing Light',
     desc: 'Holy bolt that pierces defense.',
     speed: 'slow', type: 'mag', target: 'enemy',
-    base: { min: 45, max: 80 }, statCoef: 0.55, defPen: 0.25,
+    base: { min: 65, max: 95 }, statCoef: 0.55, defPen: 0.25,
     use: function(a, t){ return hit(a, t, { ability: this }); }
   },
 
@@ -1565,7 +1569,7 @@ allowDeadTarget: true,
     }
 
     // If dead: revive with % HP, cure poison, reset KO latches
-    const reviveHP = Math.max(1, Math.floor(t.maxHP * 0.45));
+    const reviveHP = Math.max(1, Math.floor(t.maxHP * 0.65));
     t.hp = reviveHP;
 
 // Spend the one-time revive charge NOW (only when a revive actually happens)
@@ -1586,7 +1590,7 @@ a._rezUsed = true;
     vfxActCue?.(a, this.label);
     if (typeof vfxResurrect === 'function') vfxResurrect(t);
     vfxFlashColor?.(t, { color: 0xa7c4ff, ms: 650, alpha: 0.25 });
-    vfxFloatText?.(t, `REVIVE ${reviveHP}`, { ms: 1500, fontSize: 22 });
+    vfxFloatText?.(t, `REVIVE ${reviveHP}`, { ms: 1500, fontSize: 26 });
 
     appendLogHTML(`<span style="color:#a7c4ff">✝ ${a.name} resurrects ${t.name} with ${reviveHP} HP!</span>`);
 
@@ -1607,7 +1611,7 @@ a._rezUsed = true;
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
      {label:'Meteor', desc:'Fast meteor strike with chance to stun.', speed:'fast', type:'mag', target:'enemy',
- base:{min:25,max:55}, statCoef:0.45,
+ base:{min:35,max:75}, statCoef:0.45,
  use:function(a,t){
    const r=hit(a,t,{ability:this});
    if(t.alive() && rand()<0.25){
@@ -1618,7 +1622,7 @@ a._rezUsed = true;
  }},
 
       {label:'Fireball', desc:'Large fireball that scorches all foes.', speed:'slow', type:'mag', target:'all-enemies',
-       base:{min:50,max:90}, statCoef:0.50, defPen:0.20,
+       base:{min:65,max:125}, statCoef:0.50, defPen:0.20,
        use:function(a,arr){ for(const t of arr){ if(!t.alive()) continue; hit(a,t,{ability:this}); } } },
 
       {label:'Arcane Echo', desc:'Your spells cast twice next turn.', speed:'normal', type:'mag', target:'self',
@@ -1628,11 +1632,11 @@ a._rezUsed = true;
     /* ===== Paladin ===== */
     case 'Paladin': return [
       {label:'Attack', desc:'Basic sword & board attack.', speed:'normal', type:'phys', target:'enemy',
-       base:{min:50,max:55}, statCoef:0.40, isBasic:true,
+       base:{min:60,max:85}, statCoef:0.40, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Shield Bash', desc:'Quick bash with a small chance to stun.', speed:'fast', type:'phys', target:'enemy',
- base:{min:25,max:45}, statCoef:0.35,
+ base:{min:35,max:55}, statCoef:0.35,
  use:function(a,t){
    const r=hit(a,t,{ability:this});
    if(t.alive() && rand()<0.3){
@@ -1646,7 +1650,7 @@ a._rezUsed = true;
   label:'Cleanse',
   desc:'Remove ailments and heal small wounds.',
   speed:'normal', type:'mag', target:'ally',
-  heal:{min:15,max:25}, healCoef:0.50, scalesWith:'SDM',
+  heal:{min:20,max:30}, healCoef:0.50, scalesWith:'SDM',
 
   use:function(a,t){
     if (!t) return;
@@ -1686,7 +1690,7 @@ a._rezUsed = true;
 
 
       {label:'Sanctify', desc:'Smite all enemies.', speed:'slow', type:'mag', target:'all-enemies',
-       base:{min:20,max:60}, statCoef:0.40,
+       base:{min:20,max:65}, statCoef:0.40,
        use:function(a,arr){ for(const t of arr){ if(!t.alive()) continue; hit(a,t,{ability:this}); } } },
 
       {label:'Divine Shield', desc:'One ally takes no damage this round.', speed:'fast', type:'mag', target:'ally',
@@ -1698,7 +1702,7 @@ a._rezUsed = true;
      {
   label:`Ranger's Focus`,
   desc:'Heal an ally and boost their attack.',
-  speed:'normal', type:'mag', target:'ally',
+  speed:'fast', type:'mag', target:'ally',
   heal:{min:25,max:35}, healCoef:0.25, scalesWith:'ATK',
 
   use:function(a,t){
@@ -1729,15 +1733,15 @@ a._rezUsed = true;
 },
 
       {label:'Attack', desc:'Loose a quick arrow.', speed:'fast', type:'phys', target:'enemy',
-       base:{min:45,max:60}, statCoef:0.40, isBasic:true,
+       base:{min:65,max:95}, statCoef:0.40, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Volley', desc:'Rain arrows over the battlefield.', speed:'normal', type:'phys', target:'all-enemies',
-       base:{min:5,max:100}, statCoef:0.30,
+       base:{min:25,max:100}, statCoef:0.30,
        use:function(a,arr){ for(const t of arr){ if(!t.alive()) continue; hit(a,t,{ability:this}); } } },
 
       {label:'Snipe', desc:'Take careful aim for the vitals.', speed:'slow', type:'phys', target:'enemy',
-       base:{min:60,max:135}, statCoef:0.65, critBonus:0.30,
+       base:{min:60,max:155}, statCoef:0.65, critBonus:0.30,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:`Hunter's Mark`, desc:'Target takes increased damage until end of next round.', speed:'normal', type:'phys', target:'enemy',
@@ -1750,12 +1754,12 @@ a._rezUsed = true;
     /* ===== Monk ===== */
     case 'Monk': return [
       {label:'Flurry', desc:'Three successive strikes.', speed:'slow', type:'phys', target:'enemy',
-       base:{min:50,max:65}, statCoef:0.35,
+       base:{min:65,max:75}, statCoef:0.35,
        use:function(a,t){ for(let i=1;i<=3;i++){ if(!t.alive()) break;
          a._usingAbilityLabel = `Flurry (${i}/3)`; hit(a,t,{ability:this}); a._usingAbilityLabel = undefined; } } },
 
       {label:'Attack', desc:'Strike with increasing confidence.', speed:'fast', type:'phys', target:'enemy',
-       base:{min:45,max:55}, statCoef:0.40, isBasic:true,
+       base:{min:50,max:70}, statCoef:0.40, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Chi Wave', desc:'Cleanse CC/debuffs from all allies.', speed:'normal', type:'mag', target:'all-allies',
@@ -1763,25 +1767,25 @@ a._rezUsed = true;
          if(cleanseCCAndDebuffs(ally)) count++; updateStatusView(ally); }
          appendLog(count ? `A Chi Wave rips accross the battlefield. Negative effects washed away from ${count} allies.` : `No negative effects to cleanse.`); } },
 
-      {label:'Palm Hit', desc:'Body blow that may stagger foes.', speed:'normal', type:'phys', target:'enemy',
- base:{min:40,max:50}, statCoef:0.4,
+      {label:'Palm Hit', desc:'Quick body blow with 35% chance to stun foes.', speed:'normal', type:'phys', target:'enemy',
+ base:{min:40,max:65}, statCoef:0.4,
  use:function(a,t){
    const r=hit(a,t,{ability:this});
-   if(t.alive() && rand()<0.33){
+   if(t.alive() && rand()<0.35){
      const dur=ccDurBySDM(a);
      applyStatusWithLog(t,'stun',dur,'#b084ff',`${t.name} is staggered for {dur} rounds!`, a);
    }
    return r;
  }},
 
-      {label:'Counterstance', desc:'Guard and counter basic attacks.', speed:'fast', type:'phys', target:'self',
-       use:(a)=>{ pushStatus(a,{key:'guard', dur:1, data:{ pct:0.40 }}); pushStatus(a,{key:'counter', dur:1}); appendLog(`${a.name} adopts a counter stance.`); }}
+      {label:'Counterstance', desc:'Guard and counter basic attacks from cast until end of next turn.', speed:'fast', type:'phys', target:'self',
+       use:(a)=>{ pushStatus(a,{key:'guard', dur:2, data:{ pct:0.40 }}); pushStatus(a,{key:'counter', dur:1}); appendLog(`${a.name} adopts a counter stance.`); }}
     ];
 
     /* ===== Necromancer ===== */
     case 'Necromancer': return [
       {label:'Attack', desc:'Basic attack with chance to drain.', speed:'normal', type:'phys', target:'enemy',
-       base:{min:10,max:20}, statCoef:0.40, isBasic:true,
+       base:{min:15,max:30}, statCoef:0.40, isBasic:true,
        use:function(a,t){
         const r = hit(a,t,{ability:this});
         return r;
@@ -1791,7 +1795,7 @@ a._rezUsed = true;
   label:'Life Drain',
   desc:'Steal life from a foe.',
   speed:'normal', type:'mag', target:'enemy',
-  base:{min:30,max:60}, statCoef:0.35,
+  base:{min:35,max:75}, statCoef:0.35,
 
   use:function(a,t){
     if (!a || !t) return;
@@ -1865,7 +1869,6 @@ a._rezUsed = true;
       // Attacker gets healed
       vfxHeal?.(finalA, dealt);
       vfxFlashColor?.(finalA, { color: 0xa7ffb5, ms: 450, alpha: 0.16 });
-      vfxFloatText?.(finalA, `+${Math.max(0, finalA.hp - aBefore)}`, { ms: (VFX?.FLOAT_MS ?? 900), fontSize: 18 });
 
       // KO announcement + KO VFX if drain killed them
       if (tBefore > 0 && finalT.hp <= 0){
@@ -2027,7 +2030,7 @@ a._rezUsed = true;
   }
 },
 
-      {label:'Death Touch', desc:'Crush a third of the foe’s current life.', speed:'slow', type:'mag', target:'enemy',
+      {label:'Death Touch', desc:'Crush a third of your target's HP.', speed:'slow', type:'mag', target:'enemy',
         use:(a,t)=>{
           if (!t.alive()) return appendLog(`${t.name} is already down.`);
            const third = Math.floor(t.hp / 3);
@@ -2037,7 +2040,7 @@ a._rezUsed = true;
       }},
 
 
-{label:'Plague Detonation', desc:'Consume all poison for an instant burst.', speed:'fast', type:'mag', target:'all-enemies',
+{label:'Plague Detonation', desc:'Quickly consume all poison for an instant burst.', speed:'fast', type:'mag', target:'all-enemies',
   use:(a,arr)=>{
   let hits = 0;
 
@@ -2064,7 +2067,7 @@ a._rezUsed = true;
       proj: { ms: (VFX?.PROJ_MS ?? 750) * 1.05, color: 0x57ff7a, radius: 8 }, // GREEN
       onImpact: (t) => {
         vfxFlashColor?.(t, { color: 0x57ff7a, ms: 280, alpha: 0.30 }); // GREEN burst
-        vfxShakePanel?.(t, { px: (VFX?.SHAKE_PX ?? 7), ms: vfxMs((VFX?.SHAKE_MS ?? 250) * 1.1) });
+        vfxShakePanel?.(t, { px: (VFX?.SHAKE_PX ?? 7), ms: vfxMs((VFX?.SHAKE_MS ?? 300) * 1.1) });
         // we'll show -dmg at impact below using the real computed dmg
       },
       staggerMs: (VFX?.AOE_STAGGER_MS ?? 140)
@@ -2142,7 +2145,7 @@ a._rezUsed = true;
 },
 
       {label:'Attack', desc:'Throwing dagger attack which can find weak spots.', speed:'normal', type:'phys', target:'enemy',
-       base:{min:25,max:35}, scalesWith:'SDM', statCoef:0.40, isBasic:true,
+       base:{min:35,max:55}, scalesWith:'SDM', statCoef:0.40, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
      {label:'Berserk', desc:'Target attacks at random. 45% chance success.', speed:'normal', type:'mag', target:'enemy',
@@ -2166,7 +2169,7 @@ a._rezUsed = true;
 },
 
       {label:'Mental Breakdown', desc:'Crushing psychic blow.', speed:'slow', type:'mag', target:'enemy',
-       base:{min:60,max:120}, scalesWith:'SDM', statCoef:0.55,
+       base:{min:90,max:120}, scalesWith:'SDM', statCoef:0.55,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Premonition', desc:'All ally actions become fast next two rounds.', speed:'fast', type:'mag', target:'all-allies',

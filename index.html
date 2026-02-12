@@ -1342,7 +1342,7 @@ case 'Warrior': return [
     /* ===== Rogue ===== */
     case 'Rogue': return [
       {label:'Backstab', desc:'Go for the vitals.', speed:'slow', type:'phys', target:'enemy',
-       base:{min:65,max:130}, statCoef:0.40, critBonus:1.35,
+       base:{min:65,max:130}, statCoef:0.40, critBonus:1.65,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Attack', desc:'Hard slice at your enemy.', speed:'fast', type:'phys', target:'enemy',
@@ -1370,7 +1370,7 @@ case 'Warrior': return [
     const r = hit(a, t, { ability:this });
 
     if (t.alive?.() && !r.dodged && (r.dealt|0) > 0){
-      pushStatus(t, { key:'marked', dur:2 });
+      pushStatus(t, { key:'marked', dur:3 });
       appendLogHTML?.(`<span style="color:#ffd37a">🎯 ${t.name} is <b>marked</b> (2).</span>`)
         || appendLog(`${t.name} is marked (2).`);
     }
@@ -1568,7 +1568,7 @@ if (wasPoisoned){
   label:'Guardian Angel',
   desc:'Shield an ally from all damage this round and heal minor wounds.',
   speed:'fast', type:'mag', target:'ally',
-  heal:{min:18,max:30}, healCoef:0.25, scalesWith:'SDM',
+  heal:{min:15,max:30}, healCoef:0.25, scalesWith:'SDM',
   use:function(a,t){
     if (!t) return;
 
@@ -1788,7 +1788,7 @@ a._rezUsed = true;
   label:'Judgment',
   desc:'Smite a foe. Deals bonus damage if they are afflicted.',
   speed:'slow', type:'mag', target:'enemy',
-  base:{min:70,max:120}, statCoef:0.55, defPen:0.10,
+  base:{min:70,max:130}, statCoef:0.55, defPen:0.10,
 
   use:function(a,t){
     if (!t?.alive?.()) return;
@@ -1798,7 +1798,7 @@ a._rezUsed = true;
       hasStatus(t,'marked') || hasStatus(t,'blind') || hasStatus(t,'berserk') || hasStatus(t,'taunt') || hasStatus(t,'stun');
 
     // Use hit() but apply a deterministic multiplier via opt.dmgMult (your hit supports it)
-    const mult = afflicted ? 1.25 : 1.0;
+    const mult = afflicted ? 1.35 : 1.0;
     const r = hit(a, t, { ability:this, dmgMult: mult });
 
     if (afflicted && t.alive?.()){
@@ -4098,10 +4098,12 @@ function hit(a, t, opt={}, verb){
   if (a._echoing) dmgToApply = Math.floor(dmgToApply * (a._echoMult || CONFIG.ECHO_MULT || 1.05));
   if (opt.dmgMult) dmgToApply = Math.floor(dmgToApply * opt.dmgMult);
 
-  if (hasStatus(target,'divine_shield') && dmgToApply>0){
-    appendLogHTML(`${target.name} is protected by <span style="color:#ffd700">Divine Shield</span>! No damage taken.`);
-    dmgToApply = 0;
-  }
+ if (hasStatus(target,'divine_shield') && dmgToApply > 0){
+  const before = dmgToApply;
+  dmgToApply = Math.max(1, Math.floor(dmgToApply * 0.10)); // 90% reduction
+  appendLogHTML(`${target.name} is protected by <span style="color:#ffd700">Divine Shield</span>! Damage reduced (${before} → ${dmgToApply}).`);
+}
+
   if (hasStatus(target,'marked') && dmgToApply>0){
     dmgToApply = Math.floor(dmgToApply*(CONFIG.MARKED_MULT||1.8));
   }

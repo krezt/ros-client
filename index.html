@@ -164,6 +164,44 @@
       display:flex; flex-direction:column; align-items:flex-start; white-space:normal; line-height:1.2; cursor:pointer;
       transition: transform .08s ease-out;
     }
+
+/* right side (speed dots + type label) */
+.action-btn .right-meta{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+  gap:4px;
+  min-width:44px;
+}
+
+/* the MAG/PHYS label */
+.action-btn .ab-type{
+  font-size:10px;
+  line-height:10px;
+  letter-spacing:0.8px;
+  text-transform:uppercase;
+  opacity:0.9;
+
+  padding:2px 6px;
+  border-radius:999px;
+
+  /* subtle pill background */
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.10);
+}
+
+/* tint by type */
+.action-btn .ab-type.mag{
+  color:#a7c4ff;
+  border-color: rgba(167,196,255,0.35);
+  background: rgba(167,196,255,0.10);
+}
+.action-btn .ab-type.phys{
+  color:#ffd37a;
+  border-color: rgba(255,211,122,0.35);
+  background: rgba(255,211,122,0.10);
+}
+
     .action-btn:hover{ background:#2a3b5b; transform: translateY(-1px); }
     .action-btn:active{ transform: translateY(0); box-shadow: 0 1px 0 rgba(0,0,0,.35); }
     .action-btn .label{ font-weight:800; font-size:24px; }
@@ -956,7 +994,7 @@ case 'Shinobi': return [
 {
   label: 'Attack',
   desc: 'Shuriken attack. Chance to double strike.',
-  speed: 'medium', type: 'phys', target: 'enemy',
+  speed: 'fast', type: 'phys', target: 'enemy',
   base: { min: 45, max: 70 }, statCoef: 0.45, critBonus:0.30, isBasic: true,
   procChance: 0.65,
 
@@ -1019,7 +1057,7 @@ case 'Shinobi': return [
   {
     label:"Thief's Haste",
     desc:'Gain an additional basic attack for the next 3 rounds.',
-    speed:'medium', type:'mag', target:'self',
+    speed:'normal', type:'mag', target:'self',
     use:function(a){
       const dur = 4;
       removeStatusKey(a,'shinobi_haste');
@@ -1055,7 +1093,7 @@ case 'Shinobi': return [
   {
     label: 'Bleed',
     desc: 'Strike and inflict Bleed: 15% current HP at end of round for 4 rounds.',
-    speed: 'medium', type: 'phys', target: 'enemy',
+    speed: 'normal', type: 'phys', target: 'enemy',
     base: { min: 45, max: 65 }, statCoef: 0.45,
     pct: 0.15,
 
@@ -1479,8 +1517,8 @@ case 'Cleric': return [
 
 {
   label:'Guardian Angel',
-  desc:'Shield an ally from all damage this round and heal minor wounds.',
-  speed:'fast', type:'mag', target:'ally',
+  desc:'Shield an ally from major damage this round and heal minor wounds.',
+  speed:'normal', type:'mag', target:'ally',
   heal:{min:15,max:25}, healCoef:0.25, scalesWith:'SDM',
   use:function(a,t){
     if (!t) return;
@@ -4652,6 +4690,13 @@ function renderActionBarForCurrent(){
     const s = ability.speed || 'normal';
     const on = { fast:3, normal:2, slow:1 }[s] ?? 2;
 
+// --- ability type label (MAG / PHYS) ---
+const abType = (ability?.type === 'mag' || ability?.type === 'phys')
+  ? ability.type
+  : (typeof getAbilityType === 'function' ? getAbilityType(actor, ability) : null);
+
+const typeLabel = (abType === 'mag') ? 'MAGIC' : (abType === 'phys' ? 'PHYS' : '');
+
     const disabled = isOutOfUses(ability);
     if (disabled) {
       btn.disabled = true;
@@ -4660,18 +4705,22 @@ function renderActionBarForCurrent(){
     }
 
     btn.innerHTML = `
-      <div class="btn-inner">
-        <div class="text">
-          <div class="label">${labelWithUses(ability)}</div>
-          <div class="desc">${ability.desc || ''}</div>
-        </div>
-        <div class="speed ${s}" title="${s}">
-          <span class="dot ${on >= 1 ? '' : 'off'}"></span>
-          <span class="dot ${on >= 2 ? '' : 'off'}"></span>
-          <span class="dot ${on >= 3 ? '' : 'off'}"></span>
-        </div>
+  <div class="btn-inner">
+    <div class="text">
+      <div class="label">${labelWithUses(ability)}</div>
+      <div class="desc">${ability.desc || ''}</div>
+    </div>
+
+    <div class="right-meta">
+      <div class="speed ${s}" title="${s}">
+        <span class="dot ${on >= 1 ? '' : 'off'}"></span>
+        <span class="dot ${on >= 2 ? '' : 'off'}"></span>
+        <span class="dot ${on >= 3 ? '' : 'off'}"></span>
       </div>
-    `;
+      ${typeLabel ? `<div class="ab-type ${abType}">${typeLabel}</div>` : ``}
+    </div>
+  </div>
+`;
 
     btn.onclick = () => {
       // UX-only guard (authoritative spending should still be in resolveSimultaneous)

@@ -1932,206 +1932,262 @@ a._rezUsed = true;
 
     ];
 
-    /* ===== Necromancer ===== */
-    case 'Necromancer': return [
-      {label:'Attack', desc:'Basic attack with chance to drain.', speed:'normal', type:'phys', target:'enemy',
-       base:{min:15,max:30}, statCoef:0.40, isBasic:true,
-       use:function(a,t){
-        const r = hit(a,t,{ability:this});
-        return r;
-       }},
+/* ===== Necromancer ===== */
+case 'Necromancer': return [
+  {label:'Attack', desc:'Basic attack with chance to drain.', speed:'normal', type:'phys', target:'enemy',
+   base:{min:15,max:30}, statCoef:0.40, isBasic:true,
+   use:function(a,t){
+    const r = hit(a,t,{ability:this});
+    return r;
+   }},
 
-      {
-  label:'Life Drain',
-  desc:'Steal life from a foe.',
-  speed:'normal', type:'mag', target:'enemy',
-  base:{min:35,max:75}, statCoef:0.35,
+  {
+    label:'Life Drain',
+    desc:'Steal life from a foe.',
+    speed:'normal', type:'mag', target:'enemy',
+    base:{min:35,max:75}, statCoef:0.35,
 
-  use:function(a,t){
-    if (!a || !t) return;
+    use:function(a,t){
+      if (!a || !t) return;
 
-    // Compute (same as hit() path, but this is a self-contained drain)
-    const res = computeAbilityDamage(a, t, this);
+      const res = computeAbilityDamage(a, t, this);
 
-    // If dodged: show travel + dodge on target (clarity)
-    if (res.dodged){
-      const abType = res._type || getAbilityType(a, this);
-      const projMs = (abType === 'mag') ? Math.floor((VFX?.PROJ_MS ?? 260) * 1.15) : (VFX?.PROJ_MS ?? 260);
+      if (res.dodged){
+        const abType = res._type || getAbilityType(a, this);
+        const projMs = (abType === 'mag') ? Math.floor((VFX?.PROJ_MS ?? 260) * 1.15) : (VFX?.PROJ_MS ?? 260);
+
+        vfxActCue?.(a, this.label);
+        vfxProjectile?.(a, t, { ms: projMs, color: 0xa7c4ff, radius: 6 });
+
+        const scene = getScene?.();
+        const impactDelay = Math.max(0, Math.floor(projMs * 0.75));
+        const doDodge = () => vfxDodge?.(t);
+
+        if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doDodge);
+        else doDodge();
+
+        appendLogHTML(`${t.name} <span style="color:skyblue">dodges</span> ${a.name}’s Life Drain!`);
+        return;
+      }
+
+      if (!res.hit || (res.dmg|0) <= 0){
+        vfxActCue?.(a, this.label);
+        vfxFloatText?.(t, 'RESIST', { ms: 900, fontSize: 14 });
+        appendLog(`${a.name}'s Life Drain fails to take hold.`);
+        return;
+      }
+
+      const dealt = Math.max(1, res.dmg|0);
+
+      const tBefore = t.hp;
+      const aBefore = a.hp;
+
+      t.hp = clamp(t.hp - dealt, 0, t.maxHP);
+      a.hp = clamp(a.hp + dealt, 0, a.maxHP);
+
+      if (a.hp > 0){ a._didKOVFX = false; a._deadLogged = false; }
+
+      t._refresh?.(); a._refresh?.();
+      checkHPWarnings?.(t); checkHPWarnings?.(a);
+
+      const projMs = Math.floor((VFX?.PROJ_MS ?? 260) * 1.15);
+      const scene = getScene?.();
+      const impactDelay = Math.max(0, Math.floor(projMs * 0.90));
 
       vfxActCue?.(a, this.label);
       vfxProjectile?.(a, t, { ms: projMs, color: 0xa7c4ff, radius: 6 });
 
-      const scene = getScene?.();
-      const impactDelay = Math.max(0, Math.floor(projMs * 0.75));
-      const doDodge = () => vfxDodge?.(t);
+      const finalT = t;
+      const finalA = a;
+      const crit   = !!res.crit;
 
-      if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doDodge);
-      else doDodge();
-
-      appendLogHTML(`${t.name} <span style="color:skyblue">dodges</span> ${a.name}’s Life Drain!`);
-      return;
-    }
-
-    if (!res.hit || (res.dmg|0) <= 0){
-      vfxActCue?.(a, this.label);
-      vfxFloatText?.(t, 'RESIST', { ms: 900, fontSize: 14 });
-      appendLog(`${a.name}'s Life Drain fails to take hold.`);
-      return;
-    }
-
-    const dealt = Math.max(1, res.dmg|0);
-
-    // Apply drain
-    const tBefore = t.hp;
-    const aBefore = a.hp;
-
-    t.hp = clamp(t.hp - dealt, 0, t.maxHP);
-    a.hp = clamp(a.hp + dealt, 0, a.maxHP);
-
-    // Clear KO latches if healed above 0 (edge cases)
-    if (a.hp > 0){ a._didKOVFX = false; a._deadLogged = false; }
-
-    t._refresh?.(); a._refresh?.();
-    checkHPWarnings?.(t); checkHPWarnings?.(a);
-
-    // VFX sequence: attacker cue → travel → impact → heal pop
-    const projMs = Math.floor((VFX?.PROJ_MS ?? 260) * 1.15);
-    const scene = getScene?.();
-    const impactDelay = Math.max(0, Math.floor(projMs * 0.90));
-
-    vfxActCue?.(a, this.label);
-    vfxProjectile?.(a, t, { ms: projMs, color: 0xa7c4ff, radius: 6 });
-
-    const finalT = t;
-    const finalA = a;
-    const crit   = !!res.crit;
-
-    const doImpact = () => {
-      // Target takes damage (use your unified helpers if present)
-      if (typeof vfxDamage === 'function') vfxDamage(finalT, dealt, { crit, kind:'drain' });
-      else {
-        vfxFlashColor?.(finalT, { color: 0xa7c4ff, ms: 450, alpha: 0.18 });
-        vfxShakePanel?.(finalT, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 220) });
-        vfxFlashPanel?.(finalT, { ms: (VFX?.FLASH_MS ?? 180) });
-        vfxFloatText?.(finalT, `-${dealt}`, { ms: (VFX?.FLOAT_MS ?? 900), fontSize: crit ? 28 : 20 });
-      }
-
-      // Attacker gets healed
-      vfxHeal?.(finalA, dealt);
-      vfxFlashColor?.(finalA, { color: 0xa7ffb5, ms: 450, alpha: 0.16 });
-
-      // KO announcement + KO VFX if drain killed them
-      if (tBefore > 0 && finalT.hp <= 0){
-        appendLogHTML(`<span style="color:#ff6b6b">☠ ${finalT.name} is down!</span>`);
-        if (!finalT._didKOVFX){
-          finalT._didKOVFX = true;
-          vfxKO?.(finalT);
+      const doImpact = () => {
+        if (typeof vfxDamage === 'function') vfxDamage(finalT, dealt, { crit, kind:'drain' });
+        else {
+          vfxFlashColor?.(finalT, { color: 0xa7c4ff, ms: 450, alpha: 0.18 });
+          vfxShakePanel?.(finalT, { px: (VFX?.SHAKE_PX ?? 6), ms: (VFX?.SHAKE_MS ?? 220) });
+          vfxFlashPanel?.(finalT, { ms: (VFX?.FLASH_MS ?? 180) });
+          vfxFloatText?.(finalT, `-${dealt}`, { ms: (VFX?.FLOAT_MS ?? 900), fontSize: crit ? 28 : 20 });
         }
-        finalT._refresh?.();
+
+        vfxHeal?.(finalA, dealt);
+        vfxFlashColor?.(finalA, { color: 0xa7ffb5, ms: 450, alpha: 0.16 });
+
+        if (tBefore > 0 && finalT.hp <= 0){
+          appendLogHTML(`<span style="color:#ff6b6b">☠ ${finalT.name} is down!</span>`);
+          if (!finalT._didKOVFX){
+            finalT._didKOVFX = true;
+            vfxKO?.(finalT);
+          }
+          finalT._refresh?.();
+        } else {
+          finalT._didKOVFX = false;
+        }
+      };
+
+      if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doImpact);
+      else doImpact();
+
+      if (res.crit){
+        appendLogHTML(`${a.name}’s Life Drain lands a <span style="color:gold">critical</span> siphon! ${t.name} loses ${dealt}. ${a.name} is healed for ${Math.max(0, a.hp - aBefore)}.`);
       } else {
-        finalT._didKOVFX = false;
+        appendLog(`Life Drain siphons ${dealt} from ${t.name}. ${a.name} is healed for ${Math.max(0, a.hp - aBefore)}.`);
       }
-    };
-
-    if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doImpact);
-    else doImpact();
-
-    // Log
-    if (res.crit){
-      appendLogHTML(`${a.name}’s Life Drain lands a <span style="color:gold">critical</span> siphon! ${t.name} loses ${dealt}. ${a.name} is healed for ${Math.max(0, a.hp - aBefore)}.`);
-    } else {
-      appendLog(`Life Drain siphons ${dealt} from ${t.name}. ${a.name} is healed for ${Math.max(0, a.hp - aBefore)}.`);
     }
-  }
-},
+  },
 
-{
-  label:'Grave Hex',
-  desc:'Hex the foe: strip one beneficial effect and infect with poison.',
-  speed:'fast', type:'mag', target:'enemy',
-  base:{min:35,max:55}, statCoef:0.30,
+  {
+    label:'Grave Hex',
+    desc:'Hex the foe: strip one beneficial effect and infect with poison.',
+    speed:'fast', type:'mag', target:'enemy',
+    base:{min:35,max:55}, statCoef:0.30,
 
-  use:function(a,t){
-    if (!t || typeof t.alive !== 'function' || !t.alive()) return;
+    use:function(a,t){
+      if (!t || typeof t.alive !== 'function' || !t.alive()) return;
 
-    // Small hit first (so dodge matters)
-    const r = hit(a, t, { ability:this });
+      const r = hit(a, t, { ability:this });
 
-    if (!t || typeof t.alive !== 'function' || !t.alive()) return r;
-    if (r.dodged || (r.dealt|0) <= 0) return r;
+      if (!t || typeof t.alive !== 'function' || !t.alive()) return r;
+      if (r.dodged || (r.dealt|0) <= 0) return r;
 
-    // Deterministic buff strip (no RNG)
-    const removed = (typeof stripOnePositive === 'function') ? stripOnePositive(t) : null;
+      const removed = (typeof stripOnePositive === 'function') ? stripOnePositive(t) : null;
 
-    // Add poison based on damage dealt
-    const poisonAmt = Math.max(1, Math.floor((r.dealt|0) * 0.60));
-    addPoison(t, poisonAmt);
+      const poisonAmt = Math.max(1, Math.floor((r.dealt|0) * 0.60));
+      addPoison(t, poisonAmt);
 
-    // Log
-    const msg = removed
-      ? `<span style="color:#a7c4ff">☠ ${a.name} hexes ${t.name}: removed <b>${removed}</b>, poisoned (+${poisonAmt}).</span>`
-      : `<span style="color:#a7c4ff">☠ ${a.name} hexes ${t.name}: poisoned (+${poisonAmt}).</span>`;
+      const msg = removed
+        ? `<span style="color:#a7c4ff">☠ ${a.name} hexes ${t.name}: removed <b>${removed}</b>, poisoned (+${poisonAmt}).</span>`
+        : `<span style="color:#a7c4ff">☠ ${a.name} hexes ${t.name}: poisoned (+${poisonAmt}).</span>`;
 
-    if (typeof appendLogHTML === 'function') appendLogHTML(msg);
-    else if (typeof appendLog === 'function'){
-      if (removed) appendLog(`${a.name} hexes ${t.name}: removed ${removed}, poisoned (+${poisonAmt}).`);
-      else appendLog(`${a.name} hexes ${t.name}: poisoned (+${poisonAmt}).`);
+      if (typeof appendLogHTML === 'function') appendLogHTML(msg);
+      else if (typeof appendLog === 'function'){
+        if (removed) appendLog(`${a.name} hexes ${t.name}: removed ${removed}, poisoned (+${poisonAmt}).`);
+        else appendLog(`${a.name} hexes ${t.name}: poisoned (+${poisonAmt}).`);
+      }
+
+      return r;
     }
+  },
 
-    return r;
-  }
-},
+  // ✅ CLEAN Plague (fixed quotes, parentheses, and deterministic behavior)
+  {
+    label:'Plague',
+    desc:'Afflict all foes with massive poison.',
+    speed:'slow', type:'mag', target:'all-enemies',
+    base:{min:20,max:65}, statCoef:0.30,
 
+    use:function(a, arr){
+      const aliveTargets = (arr || []).filter(t => t && typeof t.alive === 'function' && t.alive());
+      if (!aliveTargets.length){
+        appendLog?.(`${a.name} casts Plague, but there are no targets.`);
+        return;
+      }
 
-{ label:'Plague', desc:'Afflict all foes with massive poison.', speed:'slow', type:'mag', target:'all-enemies', 
-base:{min:20,max:65}, statCoef:0.30, 
-use:function(a, arr){ console.log('[Plague] use fired (version A)', a?.name, 'targets=', (arr||[]).length); 
-const aliveTargets = (arr || []).filter(t => t?.alive?.()); 
-if (!aliveTargets.length){ appendLog?.(${a.name} casts Plague, but there are no targets.); 
-return; } 
+      const ms = (x)=> (typeof vfxMs === 'function' ? vfxMs(x) : (x|0));
+      const sc = (x)=> (typeof vfxScale === 'function' ? vfxScale(x) : x);
+      const scene = getScene?.();
 
-// --- timing helpers (don’t require safeVfxMs/safeVfxScale) --- 
-const ms = (x)=> (typeof vfxMs==='function' ? vfxMs(x) : (x|0)); 
-const sc = (x)=> (typeof vfxScale==='function' ? vfxScale(x) : x); 
-const scene = getScene?.(); 
+      const targets = [...aliveTargets].sort((x,y)=>
+        String(x.netId ?? x.name).localeCompare(String(y.netId ?? y.name))
+      );
 
-// Deterministic ordering for stagger/VFX readability const targets = 
-[...aliveTargets].sort((x,y)=> String(x.netId ?? x.name).localeCompare(String(y.netId ?? y.name)) ); 
+      const idxMap = new Map();
+      targets.forEach((t,i)=>idxMap.set(t,i));
 
-// Index map for impact timing alignment const idxMap = new Map(); targets.forEach((t,i)=>idxMap.set(t,i)); 
-const projMsRaw = ((VFX?.PROJ_MS ?? 750) * 1.15); 
-const projMs = ms(projMsRaw); const impactDelay = Math.max(0, Math.floor(projMs * 0.90)); 
-const step = ms(VFX?.AOE_STAGGER_MS ?? 140); // WHO is casting (overhead cue) vfxActCue?.(a, 'Plague'); 
+      const projMsRaw   = ((VFX?.PROJ_MS ?? 750) * 1.15);
+      const projMs      = ms(projMsRaw);
+      const impactDelay = Math.max(0, Math.floor(projMs * 0.90));
+      const step        = ms(VFX?.AOE_STAGGER_MS ?? 140);
 
-// --- VFX travel: prefer vfxCastToTargets; fallback to manual projectiles --- 
-let usedAOEVFX = false; try { if (typeof vfxCastToTargets === 'function'){ usedAOEVFX = true; 
+      vfxActCue?.(a, 'Plague');
 
-vfxCastToTargets(a, targets, { label: '', proj: { ms: projMsRaw, color: 0x57ff7a, radius: 7 }, onImpact: (t) => { 
+      // Travel VFX (cosmetic only)
+      let usedAOE = false;
+      try {
+        if (typeof vfxCastToTargets === 'function'){
+          usedAOE = true;
+          vfxCastToTargets(a, targets, {
+            label: '',
+            proj: { ms: projMsRaw, color: 0x57ff7a, radius: 7 },
+            onImpact: (t) => vfxFlashColor?.(t, { color: 0x57ff7a, ms: ms(350), alpha: 0.25 }),
+            staggerMs: (VFX?.AOE_STAGGER_MS ?? 140)
+          });
+        }
+      } catch (e) { usedAOE = false; }
 
-// impact flash only (numbers/text handled below on the same timing) 
-vfxFlashColor?.(t, { color: 0x57ff7a, ms: ms(350), alpha: 0.25 }); }, 
-staggerMs: (VFX?.AOE_STAGGER_MS ?? 140) }); } } catch { usedAOEVFX = false; } if (!usedAOEVFX){ 
+      if (!usedAOE){
+        try {
+          targets.forEach((t, i) => {
+            const startDelay = i * step;
 
-// fallback: still show travel from caster to each target 
-try { targets.forEach((t, i) => { const startDelay = i * step; const doTravel = () => { 
+            const doTravel = () => {
+              vfxProjectile?.(a, t, { ms: projMs, color: 0x57ff7a, radius: Math.floor(sc(7)) });
 
-// travel vfxProjectile?.(a, t, { ms: projMs, color: 0x57ff7a, radius: Math.floor(sc(7)) }); 
+              const doImpact = () => {
+                vfxFlashColor?.(t, { color: 0x57ff7a, ms: ms(350), alpha: 0.25 });
 
-// impact happens when the projectile would reach the target const doImpact = () => { vfxFlashColor?.(t, { color: 0x57ff7a, ms: ms(350), alpha: 0.25 }); // If you want the amount shown at impact, you need the dmg per target. // Option A (recommended): store it on the unit during the mechanics loop: // t._plagueLastAmt = res.dmg; // then use it here: const amt = t._plagueLastAmt | 0; if (amt > 0){ vfxFloatText?.(t, -${amt} POISON, { ms: ms(1100), fontSize: Math.floor(sc(16)), color: (VFX_COL?.poison || '#57ff7a') }); } // optional generic tag // vfxFloatText?.(t, POISONED, { ms: ms(650), fontSize: Math.floor(sc(14)), color: (VFX_COL?.poison || '#57ff7a') }); }; if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doImpact); else doImpact(); }; if (scene?.time?.delayedCall) scene.time.delayedCall(startDelay, doTravel); else doTravel(); }); } catch {} } // --- Mechanics + impact-timed text --- for (const t of targets){ const res = computeAbilityDamage(a, t, this); if (res.hit && !res.dodged && (res.dmg|0) > 0){ 
+                const amt = (t._plagueLastAmt|0);
+                if (amt > 0){
+                  vfxFloatText?.(t, `-${amt} POISON`, {
+                    ms: ms(1100),
+                    fontSize: Math.floor(sc(16)),
+                    color: (VFX_COL?.poison || '#57ff7a')
+                  });
+                }
+              };
 
-// Mechanics: apply poison immediately (deterministic) 
-addPoison(t, res.dmg, { silentVFX:true }); 
+              if (scene?.time?.delayedCall) scene.time.delayedCall(impactDelay, doImpact);
+              else doImpact();
+            };
 
-// Log (immediate is fine; your UI is end-of-round-ish anyway) logGreen?.(${t.name} is afflicted by a horrible plague (+${res.dmg}).); // Cosmetic: show PLAGUE + -X POISON at the time the projectile *arrives* try { const i = idxMap.get(t); if (scene?.time?.delayedCall && i != null){ const when = (i * step) + impactDelay; const amt = res.dmg|0; scene.time.delayedCall(when, () => { vfxFloatText?.(t, -${amt} POISON, { ms: ms(1100), fontSize: Math.floor(sc(16)), color: (VFX_COL?.poison || '#57ff7a') }); }); } } catch {} } else { appendLog?.(${a.name}'s Plague misses ${t.name}.); } } } },
+            if (scene?.time?.delayedCall) scene.time.delayedCall(startDelay, doTravel);
+            else doTravel();
+          });
+        } catch (e) {}
+      }
 
-      {label:'Death Touch', desc:'Crush a third of your target's HP.', speed:'slow', type:'mag', target:'enemy',
-        use:(a,t)=>{
-          if (!t.alive()) return appendLog(`${t.name} is already down.`);
-           const third = Math.floor(t.hp / 3);
-        t.hp = clamp(t.hp - third, 0, t.maxHP);
-         t._refresh && t._refresh(); checkHPWarnings(t);
-        appendLogHTML(`<span style="color:#ff6b6b">${a.name} invokes Death Touch! ${t.name} loses ${third} HP.</span>`);
-      }},
+      // Mechanics (deterministic) + scheduled cosmetic numbers
+      for (const t of targets){
+        const res = computeAbilityDamage(a, t, this);
+
+        if (res.hit && !res.dodged && (res.dmg|0) > 0){
+          const amt = (res.dmg|0);
+
+          // store for fallback VFX
+          t._plagueLastAmt = amt;
+
+          addPoison(t, amt, { silentVFX:true });
+          logGreen?.(`${t.name} is afflicted by a horrible plague (+${amt}).`);
+
+          // cosmetic number at impact timing
+          try {
+            const i = idxMap.get(t);
+            if (scene?.time?.delayedCall && i != null){
+              const when = (i * step) + impactDelay;
+              scene.time.delayedCall(when, () => {
+                vfxFloatText?.(t, `-${amt} POISON`, {
+                  ms: ms(1100),
+                  fontSize: Math.floor(sc(16)),
+                  color: (VFX_COL?.poison || '#57ff7a')
+                });
+              });
+            }
+          } catch (e) {}
+        } else {
+          appendLog?.(`${a.name} casts Plague, but it misses ${t.name}.`);
+        }
+      }
+    }
+  },
+
+  {label:'Death Touch', desc:'Crush a third of your target\'s HP.', speed:'slow', type:'mag', target:'enemy',
+    use:(a,t)=>{
+      if (!t.alive()) return appendLog(`${t.name} is already down.`);
+      const third = Math.floor(t.hp / 3);
+      t.hp = clamp(t.hp - third, 0, t.maxHP);
+      t._refresh && t._refresh(); checkHPWarnings(t);
+      appendLogHTML(`<span style="color:#ff6b6b">${a.name} invokes Death Touch! ${t.name} loses ${third} HP.</span>`);
+    }},
 
 {label:'Plague Detonation', desc:'Quickly consume all poison for an instant burst.', speed:'fast', type:'mag', target:'all-enemies',
   use:(a,arr)=>{

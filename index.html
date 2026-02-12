@@ -1824,7 +1824,7 @@ t._refresh && t._refresh();
   label:'Judgment',
   desc:'Smite a foe. Deals bonus damage if they are afflicted.',
   speed:'slow', type:'mag', target:'enemy',
-  base:{min:90,max:130}, statCoef:0.55, defPen:0.10,
+  base:{min:75,max:130}, statCoef:0.55, defPen:0.05,
 
   use:function(a,t){
     if (!t?.alive?.()) return;
@@ -1944,25 +1944,41 @@ t._refresh && t._refresh();
          if(cleanseCCAndDebuffs(ally)) count++; updateStatusView(ally); }
          appendLog(count ? `A Chi Wave rips accross the battlefield. Negative effects washed away from ${count} allies.` : `No negative effects to cleanse.`); } },
 
-      {label:'Counterstance', desc:'Guard and counter basic attacks from cast until end of next turn.', speed:'fast', type:'phys', target:'self',
-       use:(a)=>{ pushStatus(a,{key:'guard', dur:2, data:{ pct:0.40 }}); pushStatus(a,{key:'counter', dur:1}); appendLog(`${a.name} adopts a counter stance.`); }},
+      {label:'Counterstance', desc:'Guard and counter basic attacks from cast until end of next 2 turns.', speed:'fast', type:'phys', target:'self',
+       use:(a)=>{ pushStatus(a,{key:'guard', dur:3, data:{ pct:0.25 }}); pushStatus(a,{key:'counter', dur:1}); appendLog(`${a.name} adopts a counter stance.`); }},
 
 {
-  label:'Iron Body',
-  desc:'Fortify yourself: DEF↑ and minor Guard for a short time.',
-  speed:'normal', type:'phys', target:'self',
+  label:'Second Wind',
+  desc:'Cleanse yourself, then regenerate HP for 3 rounds.',
+  speed:'normal', type:'mag', target:'self',
+
+  hotDur: 3,
+  hotPct: 0.05, // 5% max HP per round
+
   use:function(a){
-    const defDur = 4;
-    const guardDur = 3;
+    if (!a) return;
 
-    pushStatus(a, { key:'def_up', dur:defDur });
-    pushStatus(a, { key:'guard', dur:guardDur, data:{ pct:0.25 } });
+    const removed = cleanseCCAndDebuffs(a);
 
-    vfxActCue?.(a, 'Iron Body');
-    appendLogHTML?.(`<span style="color:#a7c4ff">🥋 ${a.name} hardens their body: DEF↑ (${defDur}), Guard (${guardDur}).</span>`)
-      || appendLog(`${a.name} hardens their body: DEF↑ (${defDur}), Guard (${guardDur}).`);
+    const dur = this.hotDur ?? 4;
+    const pct = this.hotPct ?? 0.05;
+
+    removeStatusKey(a, 'regen'); // refresh instead of stacking
+    pushStatus(a, { key:'regen', dur, data:{ pct } });
+
+    vfxActCue?.(a, this.label);
+    if (removed){
+      vfxStatus?.(a, 'cleanse', { kind:'buff' });
+      vfxFloatText?.(a, 'CLEANSE', { ms:vfxMs(900), fontSize:14, color:'#a7c4ff' });
+    }
+    vfxFloatText?.(a, `REGEN ${dur}`, { ms:vfxMs(1100), fontSize:14, color:'#57ff7a' });
+
+    appendLogHTML?.(
+      `<span style="color:#a7c4ff">🧘 ${a.name} uses Second Wind${removed ? ' (cleansed)' : ''} — regenerating for ${dur} rounds.</span>`
+    ) || appendLog(`${a.name} uses Second Wind — regenerating for ${dur} rounds.`);
   }
 }
+
 
     ];
 
@@ -3439,7 +3455,7 @@ fitTextToWidth(ui.statsTxt, ui.statsMaxW, { minSize: 12 });
 
   ui.statusNodes ||= []; for (const n of ui.statusNodes) n.destroy(); ui.statusNodes.length=0;
 
-  const ORDER=['magic_shield','shinobi_haste','invisible','bleed','shift','divine_shield','guard','shield_redirect','premonition','counter','poison','stun','taunt','blind','berserk','def_down','def_up','atk_up','sdm_up','marked','arcane_echo'];
+  const ORDER=['regen','magic_shield','shinobi_haste','invisible','bleed','shift','divine_shield','guard','shield_redirect','premonition','counter','poison','stun','taunt','blind','berserk','def_down','def_up','atk_up','sdm_up','marked','arcane_echo'];
   const present = ORDER.filter(key=>hasStatus(u,key)); if(!present.length) return;
 
   const ICON_SIZE=Math.max(8, parseInt(window.STATUS_ICON_SIZE??24,10)||24);
@@ -3484,6 +3500,8 @@ const statusTipFor = (key, u) => {
     case 'def_down': return 'DEF Down: Takes more damage.';
     case 'atk_up': return 'ATK Up: Deals more physical damage.';
     case 'sdm_up': return 'SDM Up: Deals more spell damage.';
+    case 'regen': return 'Regenerates a % of HP at end of round.';
+    case 'magic_shield': return 'Magic Sield: Protected from spell damage.';
 
     // fallback: just show the name if you haven't written a description yet
     default: return labelFor(key);
@@ -3734,12 +3752,79 @@ const VFX_TEXT = {
   counter:'COUNTER'
 };
 
+function tickRegenBeforeDots(u){
+  if (!u || !u.alive?.() || !Array.isArray(u.status)) return;
+
+  const r = u.status.find(s => s.key === 'regen');
+  if (!r || (r.dur|0) <= 0) return;
+
+  // ✅ deterministic: 5% max HP per tick (tune later)
+  const pct = Number.isFinite(r.data?.pct) ? r.data.pct : 0.05;
+  const amt = Math.max(1, Math.floor(u.maxHP * pct));
+
+  const before = u.hp;
+  u.hp = clamp(u.hp + amt, 0, u.maxHP);
+  const healed = u.hp - before;
+
+  if (healed > 0){
+    // Cosmetic only
+    vfxFlashColor?.(u, { color: 0x57ff7a, ms: vfxMs(220), alpha: 0.16 });
+    vfxFloatText?.(u, `+${healed}`, {
+      ms: vfxMs(1300),
+      fontSize: Math.floor(vfxScale(16)),
+      color: '#57ff7a'
+    });
+
+    appendLogHTML?.(`<span style="color:#57ff7a">🌿 ${u.name} regenerates ${healed} HP.</span>`)
+      || appendLog?.(`${u.name} regenerates ${healed} HP.`);
+
+    u._refresh?.();
+    checkHPWarnings?.(u);
+  }
+}
+
+function tickRegen(u){
+  if (!u?.alive?.() || !u.status) return;
+
+  const st = u.status.find(s => s.key === 'regen');
+  if (!st || (st.dur|0) <= 0) return;
+
+  const min = st.data?.min ?? 15;
+  const max = st.data?.max ?? 30;
+
+  // ✅ deterministic amount (safe for PvP)
+  const amt = Math.max(1, Math.floor((min + max) / 2));
+
+  const before = u.hp;
+  u.hp = clamp(u.hp + amt, 0, u.maxHP);
+  const healed = u.hp - before;
+
+  if (healed > 0){
+    u._refresh?.();
+    checkHPWarnings?.(u);
+
+    vfxFlashColor?.(u, { color: 0x57ff7a, ms: vfxMs(240), alpha: 0.18 });
+    vfxFloatText?.(u, `+${healed}`, {
+      ms: vfxMs(1400),
+      fontSize: Math.floor(vfxScale(16)),
+      color: '#57ff7a'
+    });
+
+    appendLogHTML?.(`<span style="color:#57ff7a">🌿 ${u.name} regenerates ${healed} HP.</span>`)
+      || appendLog?.(`${u.name} regenerates ${healed} HP.`);
+  }
+}
+
 /* ---------- end-of-round ticks & shrug (canonical order) ---------- */
 function endRoundTick(){
   const all = canonicalUnits();
 
   for (const u of all){
     if (!u.alive()) continue;
+
+  // 0) Regen ticks FIRST (before poison/bleed)
+  tickRegenBeforeDots(u);
+if (!u.alive()) continue;
 
     // 1) Poison ticks
     const p = u.status.find(s => s.key === 'poison');
@@ -3812,6 +3897,7 @@ const hadHaste  = hasStatus(u, 'shinobi_haste');
 const hadStun   = hasStatus(u, 'stun');
 const hadTaunt  = hasStatus(u, 'taunt');
 const hadBerserk= hasStatus(u, 'berserk');
+const hadRegen = hasStatus(u, 'regen');
 
 // Decrement durations (except poison)
 for (const st of u.status){ if (st.key !== 'poison') st.dur--; }
@@ -3828,6 +3914,11 @@ if (hadBleed && !hasStatus(u, 'bleed')){
     fontSize: 16,
     color: '#ffb3b3'
   });
+}
+
+if (hadRegen && !hasStatus(u, 'regen')){
+  appendLogHTML?.(`<span style="color:#9dffb3">🌿 Regeneration fades from ${u.name}.</span>`)
+  || appendLog?.(`Regeneration fades from ${u.name}.`);
 }
 
 // If Shinobi Haste expired this tick, announce it (cosmetic only)
@@ -5495,7 +5586,9 @@ window.addEventListener('resize', resizePhaserToBattlefield);
   P.role     = P.role ?? null;                 // 'host' | 'guest'
   P.phase    = P.phase ?? 'idle';              // 'idle' | 'draft' | 'battle'
   P.pool     = P.pool ?? [...ALL_CLASSES];
-  P.picksMe  = P.picksMe ?? [];
+  P.bansMe   = P.bansMe   ?? []; // jobs I banned (max 1)
+  P.bansOpp  = P.bansOpp  ?? []; // jobs opponent banned (max 1)
+  P.draftStage = P.draftStage ?? 'ban'; // 'ban' -> 'pick'P.picksMe  = P.picksMe ?? [];
   P.picksOpp = P.picksOpp ?? [];
   P.pickTurn = P.pickTurn ?? 'me';
   P.pickCount= P.pickCount ?? 0;
@@ -5505,6 +5598,7 @@ window.addEventListener('resize', resizePhaserToBattlefield);
   P.myName = P.myName || 'You';
 })();
 
+const BAN_ORDER = ['host','guest']; // one ban each, host first (swap if you want)
 const DRAFT_ORDER = ['host','guest','guest','host','guest','host']; // A–B–B–A–B–A
 
 function ensureRoundBuf(){
@@ -5515,6 +5609,32 @@ function ensureRoundBuf(){
   PVP.roundBuf.guest ||= {};
 }
 ensureRoundBuf();
+
+function bannedSet(){
+  return new Set([...(PVP.bansMe||[]), ...(PVP.bansOpp||[])]);
+}
+
+function availableDraftPool(){
+  const banned = bannedSet();
+  return (PVP.pool || ALL_CLASSES || []).filter(job => !banned.has(job));
+}
+
+function applyBan(who, job){
+  if (!job) return;
+
+  // prevent double-banning or banning something not in pool
+  const pool = new Set(PVP.pool || ALL_CLASSES || []);
+  if (!pool.has(job)) return;
+  if (bannedSet().has(job)) return;
+
+  if (who === PVP.role) {
+    if ((PVP.bansMe||[]).length >= 1) return;
+    (PVP.bansMe ||= []).push(job);
+  } else {
+    if ((PVP.bansOpp||[]).length >= 1) return;
+    (PVP.bansOpp ||= []).push(job);
+  }
+}
 
 /* ---------- light DOM helper (scoped) ---------- */
 function el(tag, attrs = {}, ...kids){
@@ -5943,6 +6063,17 @@ function handleNet(msg){
       showLobbyError(msg.msg || 'Server error.');
       break;
     }
+case 'draft_ban': {
+  applyBan(msg.who, msg.job);
+
+  if ((PVP.bansMe.length + PVP.bansOpp.length) >= BAN_ORDER.length){
+    PVP.draftStage = 'pick';
+  }
+
+  renderDraftUI?.();
+  break;
+}
+
 case 'round_choices': {
   ensureRoundBuf();
 if (!PVP.roundBuf.host || !PVP.roundBuf.guest) {
@@ -6087,6 +6218,13 @@ function getOrCreateDraftOverlay(){
   Object.assign(picksRow.style,{padding:'12px 16px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px',borderBottom:'1px solid #3a4257'});
   picksRow.innerHTML=`<div><div style="font-weight:700;margin-bottom:6px;">Your Picks</div><div id="myPicks" style="min-height:24px;opacity:.95"></div></div>
                       <div><div id="oppTitle" style="font-weight:700;margin-bottom:6px;">${PVP.opponentName||'Opponent'}</div><div id="oppPicks" style="min-height:24px;opacity:.95"></div></div>`;
+// make "myPicks" and "oppPicks" support newlines
+setTimeout(() => {
+  const a = document.getElementById('myPicks');
+  const b = document.getElementById('oppPicks');
+  if (a) a.style.whiteSpace = 'pre-line';
+  if (b) b.style.whiteSpace = 'pre-line';
+}, 0);
 
   const poolWrap=document.createElement('div'); poolWrap.id='draft-pool-wrap';
   Object.assign(poolWrap.style,{padding:'12px 16px',display:'flex',flexDirection:'column',gap:'8px',minHeight:0,flex:'1 1 auto'});
@@ -6102,7 +6240,7 @@ function getOrCreateDraftOverlay(){
   const footer=document.createElement('div');
   Object.assign(footer.style,{padding:'10px 16px',borderTop:'1px solid #3a4257',display:'flex',alignItems:'center',justifyContent:'space-between',fontSize:'12px',opacity:'.85'});
   footer.innerHTML = `
-  <div>Draft order: A–B–B–A–B–A. Battle starts when each player has 3 picks.</div>
+  <div>Ban order: A–B. Pick order: A–B–B–A–B–A. Battle starts when each player has 3 picks.</div>
   <button id="draft-cancel" class="action-btn" style="padding:6px 10px;">Cancel</button>
 `;
 
@@ -6133,28 +6271,60 @@ function mountDraftUI(){
 }
 
 function updateDraftUI(){
-  // --- turn chip (now driven by DRAFT_ORDER + pickCount) ---
+  // Decide stage: ban until both bans are in
+  const bansMeN  = (PVP.bansMe  || []).length;
+  const bansOppN = (PVP.bansOpp || []).length;
+  const banIndex = bansMeN + bansOppN;
+
+  let stage = PVP.draftStage || 'ban';
+  const sideToBan = BAN_ORDER[banIndex] || null;
+  if (!sideToBan) stage = 'pick';
+  PVP.draftStage = stage;
+
+  // --- turn chip (ban OR pick) ---
   const turnChip = document.getElementById('turnChip');
-  const pickIndex = (PVP.pickCount ?? 0);
-  const sideToPick = DRAFT_ORDER[pickIndex] || null; // 'host' | 'guest' | null when done
-  const mine = !!sideToPick && (sideToPick === PVP.role);
 
   if (turnChip){
-    if (!sideToPick){
-      turnChip.textContent = 'Draft complete';
-      turnChip.style.color = '#a7c4ff';
+    if (stage === 'ban'){
+      const mineBan = !!sideToBan && (sideToBan === PVP.role);
+      const sideLabel = (sideToBan === 'host') ? 'A' : 'B';
+      turnChip.textContent = mineBan ? `Your BAN (Side ${sideLabel})` : `Opponent BAN (Side ${sideLabel})`;
+      turnChip.style.color = mineBan ? '#ff6b6b' : '#ffd37a';
     } else {
-      const sideLabel = (sideToPick === 'host') ? 'A' : 'B';
-      turnChip.textContent = mine ? `Your pick (Side ${sideLabel})` : `Opponent (Side ${sideLabel})`;
-      turnChip.style.color = mine ? '#a7ffb5' : '#ffd37a';
+      const pickIndex = (PVP.pickCount ?? 0);
+      const sideToPick = DRAFT_ORDER[pickIndex] || null;
+      const minePick = !!sideToPick && (sideToPick === PVP.role);
+
+      if (!sideToPick){
+        turnChip.textContent = 'Draft complete';
+        turnChip.style.color = '#a7c4ff';
+      } else {
+        const sideLabel = (sideToPick === 'host') ? 'A' : 'B';
+        turnChip.textContent = minePick ? `Your pick (Side ${sideLabel})` : `Opponent (Side ${sideLabel})`;
+        turnChip.style.color = minePick ? '#a7ffb5' : '#ffd37a';
+      }
+    }
+  }
+
+  // --- header title stage hint ---
+  const hdr = document.getElementById('draft-header');
+  if (hdr){
+    const titleDiv = hdr.querySelector('div');
+    if (titleDiv){
+      titleDiv.textContent = (stage === 'ban')
+        ? 'Draft: Ban 1 Hero'
+        : 'Draft: Pick 3 Heroes';
     }
   }
 
   // --- picks + opponent name ---
   const myP = document.getElementById('myPicks');
   const opP = document.getElementById('oppPicks');
-  if (myP) myP.textContent = (PVP.picksMe.join(', ') || '—');
-  if (opP) opP.textContent = (PVP.picksOpp.join(', ') || '—');
+  const myBan = (PVP.bansMe && PVP.bansMe[0]) ? PVP.bansMe[0] : '—';
+  const opBan = (PVP.bansOpp && PVP.bansOpp[0]) ? PVP.bansOpp[0] : '—';
+
+  if (myP) myP.textContent = `Picks: ${PVP.picksMe.join(', ') || '—'}\nBan: ${myBan}`;
+  if (opP) opP.textContent = `Picks: ${PVP.picksOpp.join(', ') || '—'}\nBan: ${opBan}`;
 
   const oppTitle = document.getElementById('oppTitle');
   if (oppTitle) oppTitle.textContent = PVP.opponentName || 'Opponent';
@@ -6167,12 +6337,26 @@ function updateDraftUI(){
   const q = (filter?.value || '').trim().toLowerCase();
 
   pool.textContent = '';
-  const remaining = (PVP.pool || []).filter(j => !q || j.toLowerCase().includes(q));
 
-  // Can I pick right now?
-  const canPick = mine && (PVP.picksMe.length < 3) && !!sideToPick;
+  // Available jobs should respect bans (and optionally hide already-picked jobs)
+  const banned = (typeof bannedSet === 'function') ? bannedSet() : new Set([...(PVP.bansMe||[]), ...(PVP.bansOpp||[])]);
+  const basePool = (typeof availableDraftPool === 'function')
+    ? availableDraftPool()
+    : (PVP.pool || []).filter(j => !banned.has(j));
+
+  const remaining = basePool.filter(j => !q || j.toLowerCase().includes(q));
+
+  // Can I act right now?
+  const mineBan = (stage === 'ban') && !!sideToBan && (sideToBan === PVP.role) && (bansMeN < 1);
+  const pickIndex = (PVP.pickCount ?? 0);
+  const sideToPick = DRAFT_ORDER[pickIndex] || null;
+  const minePick = (stage === 'pick') && !!sideToPick && (sideToPick === PVP.role);
+  const canPick = minePick && (PVP.picksMe.length < 3);
 
   for (const job of remaining){
+    const isBanned = banned.has(job);
+    const alreadyPicked = (PVP.picksMe||[]).includes(job) || (PVP.picksOpp||[]).includes(job);
+
     const b = document.createElement('button');
     b.className = 'action-btn';
 
@@ -6185,14 +6369,45 @@ function updateDraftUI(){
       display:'flex',
       flexDirection:'column',
       gap:'6px',
-      alignItems:'stretch'
+      alignItems:'stretch',
+      position:'relative',
+      opacity: (isBanned || alreadyPicked) ? 0.45 : 1
     });
 
-    // Title
+    // Title row (with a little stage badge)
+    const titleRow = document.createElement('div');
+    Object.assign(titleRow.style, { display:'flex', alignItems:'center', justifyContent:'space-between', gap:'8px' });
+
     const title = document.createElement('div');
     title.className = 'label';
     title.textContent = job;
     Object.assign(title.style, { fontWeight:'800' });
+
+    const badge = document.createElement('div');
+    Object.assign(badge.style, {
+      fontSize:'11px',
+      padding:'2px 6px',
+      border:'1px solid rgba(255,255,255,0.18)',
+      borderRadius:'999px',
+      opacity:'0.9'
+    });
+
+    if (isBanned) {
+      badge.textContent = 'BANNED';
+      badge.style.color = '#ffb3b3';
+      badge.style.borderColor = 'rgba(255,120,120,0.35)';
+    } else if (alreadyPicked) {
+      badge.textContent = 'TAKEN';
+      badge.style.color = '#ffd37a';
+      badge.style.borderColor = 'rgba(255,211,122,0.35)';
+    } else {
+      badge.textContent = (stage === 'ban') ? 'BAN' : 'PICK';
+      badge.style.color = (stage === 'ban') ? '#ffb3b3' : '#a7ffb5';
+      badge.style.borderColor = (stage === 'ban') ? 'rgba(255,179,179,0.35)' : 'rgba(167,255,181,0.35)';
+    }
+
+    titleRow.appendChild(title);
+    titleRow.appendChild(badge);
 
     // One-liner
     const desc = document.createElement('div');
@@ -6200,7 +6415,7 @@ function updateDraftUI(){
     desc.textContent = (window.CLASS_BLURBS && window.CLASS_BLURBS[job]) || '—';
     Object.assign(desc.style, { opacity:'0.9' });
 
-    // Portrait (centered under text)
+    // Portrait
     const img = document.createElement('img');
     img.src = portraitURL(job);
     img.alt = job;
@@ -6217,17 +6432,36 @@ function updateDraftUI(){
     });
     img.onerror = () => { img.style.display = 'none'; };
 
-    b.appendChild(title);
+    b.appendChild(titleRow);
     b.appendChild(desc);
     b.appendChild(img);
 
-    // Enable/disable pick based on order + pick cap
-    b.disabled = !canPick;
+    // Disable based on stage + turn + banned/taken
+    const canClickBan  = mineBan && !isBanned && !alreadyPicked;
+    const canClickPick = canPick && !isBanned && !alreadyPicked;
+
+    b.disabled = !(canClickBan || canClickPick);
 
     b.onclick = () => {
-      if (!canPick) return;
+      if (stage === 'ban'){
+        if (!canClickBan) return;
+
+        // apply locally immediately (safe; applyBan ignores duplicates)
+        applyBan(PVP.role, job);
+        send({ kind:'draft_ban', who:PVP.role, job });
+
+        // move to pick stage if both bans are done
+        const total = ((PVP.bansMe||[]).length + (PVP.bansOpp||[]).length);
+        if (total >= BAN_ORDER.length) PVP.draftStage = 'pick';
+
+        updateDraftUI();
+        return;
+      }
+
+      // pick stage
+      if (!canClickPick) return;
       b.disabled = true;
-      send({ kind:'draft_pick', job, by: PVP.role }); // server should broadcast back 'draft_pick'
+      send({ kind:'draft_pick', job, by: PVP.role });
     };
 
     pool.appendChild(b);

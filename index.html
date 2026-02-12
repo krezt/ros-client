@@ -1682,31 +1682,33 @@ a._rezUsed = true;
    return r;
  }},
 
-      {
+ {
   label:'Chain Spark',
-  desc:'Fast arcane sparks strike all enemies. Small chance to daze one target.',
+  desc:'Fast arcane sparks strike all enemies. Dazes one foe for 1 round.',
   speed:'fast', type:'mag', target:'all-enemies',
-  base:{min:18,max:35}, statCoef:0.30,
+  base:{min:35,max:45}, statCoef:0.30,
+
   use:function(a, arr){
     const targets = (arr || []).filter(t => t?.alive?.());
     if (!targets.length) return;
 
     vfxActCue?.(a, 'Chain Spark');
 
-    // Light AoE damage (use hit for consistency)
+    // AoE damage (use hit for consistency)
     for (const t of targets){
       hit(a, t, { ability:this });
     }
 
-    // Small CC on exactly one enemy (deterministic target pick: first alive in canonical order)
-    // No RNG = no desync risk. If you WANT RNG, I can do it safely too.
+    // Deterministic CC: first alive (NO RNG = no desync risk)
     const pick = targets[0];
-    if (pick?.alive?.() && rand() < 0.20){
+    if (pick?.alive?.()){
       const dur = 1;
-      applyStatusWithLog(pick, 'stun', dur, '#b084ff', `${a.name}'s Chain Spark dazes ${pick.name} for {dur} rounds!`, a);
+      applyStatusWithLog(pick, 'stun', dur, '#b084ff',
+        `${pick.name} is dazed by Chain Spark for {dur} rounds!`, a);
     }
   }
 },
+
 {label:'Fireball', desc:'Large fireball that scorches all foes.', speed:'slow', type:'mag', target:'all-enemies',
        base:{min:65,max:125}, statCoef:0.50, defPen:0.20,
        use:function(a,arr){ for(const t of arr){ if(!t.alive()) continue; hit(a,t,{ability:this}); } } },
@@ -1786,7 +1788,7 @@ a._rezUsed = true;
   label:'Judgment',
   desc:'Smite a foe. Deals bonus damage if they are afflicted.',
   speed:'slow', type:'mag', target:'enemy',
-  base:{min:70,max:110}, statCoef:0.55, defPen:0.10,
+  base:{min:70,max:120}, statCoef:0.55, defPen:0.10,
 
   use:function(a,t){
     if (!t?.alive?.()) return;
@@ -1873,7 +1875,7 @@ a._rezUsed = true;
 
     if (t.alive?.() && !r.dodged && (r.dealt|0) > 0 && rand() < 0.35){
       const dur = 1;
-      applyStatusWithLog(t, 'stun', dur, '#b084ff', `${t.name} is pinned and stunned for {dur} rounds!`, a);
+      applyStatusWithLog(t, 'stun', dur, '#b084ff', `${t.name} is pinned and stunned for ${dur} rounds!`, a);
     }
     return r;
   }

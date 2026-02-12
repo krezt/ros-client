@@ -490,12 +490,12 @@ const CONFIG = {
 
   PROC: {
     Cleric: { chance: 0.75 }, Mage: { chance: 0.75 }, Monk: { chance: 0.75 },
-    Mystic: { chance: 0.75 }, Necromancer: { chance: 0.5 }, Paladin: { chance: 0.75 },
+    Mystic: { chance: 0.75 }, Necromancer: { chance: 0.75 }, Paladin: { chance: 0.75 },
   },
 
   STACKS: { atk_up:{per:0.5,max:5}, sdm_up:{per:0.5,max:5}, def_up:{per:0.33,max:5}, def_down:{per:0.25,max:5} },
 
-  MARKED_MULT: 1.85,
+  MARKED_MULT: 1.75,
   ECHO_MULT: 1.20,
   SHIELDWALL_GUARD: 0.20,
   COUNTER_COEF: 0.30,
@@ -967,7 +967,7 @@ const removed = beforeN - a.status.length;
   label: 'Power Surge',
   desc: 'Empower all allies with ATK↑ (stacks).',
   speed: 'slow', type: 'mag', target: 'all-allies',
-  dur: 4,
+  dur: 5,
 
   use: function(a, allies){
     const list = Array.isArray(allies) ? allies.filter(u => u && u.alive()) : [];
@@ -1364,7 +1364,7 @@ case 'Warrior': return [
          if(t.alive()){ const dur=buffDurBySDM(a); pushStatus(t,{key:'def_down', dur}); appendLog(`${t.name}’s defense is lowered (${dur}).`);} return r; } },
 
       {label:'Rampage', desc:'Swing that grants rampage on killshot.', speed:'normal', type:'phys', target:'enemy',
-       base:{min:95,max:130}, statCoef:0.45, critBonus:0.35,
+       base:{min:95,max:130}, statCoef:0.45, critBonus:0.30,
        use:function(a,t){
          const hpBefore = t.hp;
          const r = hit(a,t,{ability:this});
@@ -1380,7 +1380,7 @@ case 'Warrior': return [
     /* ===== Rogue ===== */
     case 'Rogue': return [
       {label:'Backstab', desc:'Go for the vitals.', speed:'slow', type:'phys', target:'enemy',
-       base:{min:65,max:130}, statCoef:0.40, critBonus:0.65,
+       base:{min:65,max:130}, statCoef:0.40, critBonus:0.30,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Attack', desc:'Hard slice at your enemy.', speed:'fast', type:'phys', target:'enemy',
@@ -1417,7 +1417,7 @@ case 'Warrior': return [
 },
 
       {label:'Shadowstep', desc:'Strike quickly and defend.', speed:'fast', type:'phys', target:'enemy',
-       base:{min:45,max:65}, statCoef:0.30, critBonus:0.35,
+       base:{min:45,max:65}, statCoef:0.30, critBonus:0.25,
        use:function(a,t){
          const r = hit(a,t,{ability:this});
          const dur = buffDurBySDM(a);
@@ -1849,7 +1849,7 @@ t._refresh && t._refresh();
     /* ===== Archer ===== */
     case 'Archer': return [
      {label:'Attack', desc:'Loose a quick arrow.', speed:'fast', type:'phys', target:'enemy',
-       base:{min:60,max:95}, statCoef:0.40, critBonus:0.30, isBasic:true,
+       base:{min:60,max:95}, statCoef:0.40, critBonus:0.15, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
   {label:`Ranger's Focus`,
   desc:'Heal an ally and boost their attack.',
@@ -1886,8 +1886,8 @@ t._refresh && t._refresh();
       {
   label:'Cover Fire',
   desc:'A precise shot with a chance to stun on hit and for one additional round.',
-  speed:'normal', type:'phys', target:'enemy',
-  base:{min:40,max:75}, critBonus:0.15, statCoef:0.45,
+  speed:'normal', type:'mag', target:'enemy',
+  base:{min:40,max:75}, critBonus:0.05, statCoef:0.45,
 
   use:function(a,t){
     if (!t?.alive?.()) return;
@@ -1906,13 +1906,13 @@ t._refresh && t._refresh();
        use:function(a,arr){ for(const t of arr){ if(!t.alive()) continue; hit(a,t,{ability:this}); } } },
 
       {label:'Snipe', desc:'Take careful aim for the vitals.', speed:'slow', type:'phys', target:'enemy',
-       base:{min:60,max:155}, statCoef:0.65, critBonus:0.30,
+       base:{min:60,max:155}, statCoef:0.65, critBonus:0.15,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:`Hunter's Mark`, desc:'Target takes increased damage until end of next round.', speed:'normal', type:'phys', target:'enemy',
        use:(a,t)=>{ if(!t.alive()) return appendLog(`${t.name} is already down.`);
-         pushStatus(t,{key:'marked', dur:2});
-         appendLogHTML(`${a.name} targets ${t.name} with <b>Hunter's Mark</b>. <span style="color:#ffd37a">${t.name} is now very susceptible to damage!</span>`);
+         appendLogHTML?.(`<span style="color:#ffd37a">🎯 ${t.name} is <b>marked</b> (2).</span>`)
+        || appendLog(`${t.name} is marked (2).`);
        }}
 
     ];
@@ -1920,7 +1920,7 @@ t._refresh && t._refresh();
     /* ===== Monk ===== */
     case 'Monk': return [
        {label:'Attack', desc:'Strike with increasing confidence.', speed:'fast', type:'phys', target:'enemy',
-       base:{min:65,max:75}, statCoef:0.40, critBonus:0.30, isBasic:true,
+       base:{min:65,max:75}, statCoef:0.40, critBonus:0.10, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
        {label:'Flurry', desc:'Three successive strikes.', speed:'slow', type:'phys', target:'enemy',
@@ -1950,7 +1950,7 @@ t._refresh && t._refresh();
 {
   label:'Iron Body',
   desc:'Fortify yourself: DEF↑ and minor Guard for a short time.',
-  speed:'fast', type:'phys', target:'self',
+  speed:'normal', type:'phys', target:'self',
   use:function(a){
     const defDur = 4;
     const guardDur = 3;
@@ -2083,7 +2083,7 @@ case 'Necromancer': return [
     label:'Grave Hex',
     desc:'Hex the foe: strip one beneficial effect and infect with poison.',
     speed:'fast', type:'mag', target:'enemy',
-    base:{min:35,max:55}, statCoef:0.30, critBonus:0.30,
+    base:{min:35,max:55}, statCoef:0.30, critBonus:0.20,
 
     use:function(a,t){
       if (!t || typeof t.alive !== 'function' || !t.alive()) return;
@@ -2352,7 +2352,7 @@ case 'Necromancer': return [
 },
 
       {label:'Mental Breakdown', desc:'Crushing psychic blow.', speed:'slow', type:'mag', target:'enemy',
-       base:{min:90,max:120}, scalesWith:'SDM', statCoef:0.55, critBonus:0.30,
+       base:{min:90,max:120}, scalesWith:'SDM', statCoef:0.55, critBonus:0.20,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
 {
@@ -3439,7 +3439,7 @@ fitTextToWidth(ui.statsTxt, ui.statsMaxW, { minSize: 12 });
 
   ui.statusNodes ||= []; for (const n of ui.statusNodes) n.destroy(); ui.statusNodes.length=0;
 
-  const ORDER=['shinobi_haste','invisible','bleed','shift','divine_shield','guard','shield_redirect','premonition','counter','poison','stun','taunt','blind','berserk','def_down','def_up','atk_up','sdm_up','marked','arcane_echo'];
+  const ORDER=['magic_shield','shinobi_haste','invisible','bleed','shift','divine_shield','guard','shield_redirect','premonition','counter','poison','stun','taunt','blind','berserk','def_down','def_up','atk_up','sdm_up','marked','arcane_echo'];
   const present = ORDER.filter(key=>hasStatus(u,key)); if(!present.length) return;
 
   const ICON_SIZE=Math.max(8, parseInt(window.STATUS_ICON_SIZE??24,10)||24);
@@ -4149,7 +4149,7 @@ const isMag  = (abType === 'mag');
 // Divine Shield (all damage)
 if (hasStatus(target,'divine_shield') && dmgToApply > 0){
   const before = dmgToApply;
-  dmgToApply = Math.max(1, Math.floor(dmgToApply * 0.25)); // 75% reduction
+  dmgToApply = Math.max(1, Math.floor(dmgToApply * 0.33)); // 66% reduction
   appendLogHTML(`${target.name} is protected by <span style="color:#ffd700">Divine Shield</span>! Damage reduced (${before} → ${dmgToApply}).`);
 }
 
@@ -5320,7 +5320,6 @@ if (!root) { console.error('[Lobby] #battlefield not found — cannot mount lobb
     b.onclick = onClick; return b;
   };
   const createBtn = mkBtn('Create Room', async ()=>{ await connectWS(); send({ kind:'create_room' }); });
-  const quickBtn  = mkBtn('Quick Match', async ()=>{ await connectWS(); send({ kind:'queue' }); });
   controls.appendChild(createBtn); controls.appendChild(quickBtn);
 
   // Join by ID

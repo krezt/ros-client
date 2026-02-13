@@ -482,9 +482,9 @@ const CONFIG = {
   CRIT_BASE: 0.025, CRIT_CAP: 0.55, CRIT_QKN_FACTOR: 0.005, CRIT_INT_FACTOR: 0.005,
   DODGE_BASE: 0.025, DODGE_QKN_FACTOR: 0.0025, DODGE_CAP: 0.15,
 
-  ARMOR_K: 0.02, DAMAGE_GLOBAL: 1.20,
+  ARMOR_K: 0.02, DAMAGE_GLOBAL: 1.25,
 
-  SHRUG_BASE: 0.05, SHRUG_TGH_FACTOR: 0.0025,
+  SHRUG_BASE: 0.05, SHRUG_TGH_FACTOR: 0.003,
 
   BUFF_BASE_MIN: 3, BUFF_BASE_MAX: 5, BUFF_SDM_PER_BONUS: 15, BUFF_MAX_CAP: 7,
 
@@ -613,14 +613,33 @@ const JOBS = {
   Necromancer:{STR:7,QKN:14, INT:34,TGH:27, kind:'mag',  name:'Necromancer' },
   Mystic:   { STR:8, QKN:27,INT:31,TGH:24, kind:'mag',  name:'Mystic' }
 };
+
+function evenNearest(n){
+  const r = Math.round(n);
+  return (r % 2 === 0) ? r : (r + 1);
+}
+// or: floor to even (no power creep)
+function evenDown(n){
+  const r = Math.floor(n);
+  return (r % 2 === 0) ? r : (r - 1);
+}
+
 function deriveStats(job){
   const HP  = CONFIG.BASE_HP + job.TGH*CONFIG.HP_PER_TGH;
   const ATK = job.STR*CONFIG.ATK_PER_STR;
   const SDM = job.INT*CONFIG.SDM_PER_INT;
   const DEF = job.TGH*CONFIG.DEF_FROM_TGH + job.QKN*CONFIG.DEF_FROM_QKN;
   const CRIT = CONFIG.CRIT_BASE + (CONFIG.CRIT_BONUS?.[job.name]||0);
-  return { HP:Math.round(HP), ATK, SDM, DEF, CRIT };
+
+  return {
+    HP:  Math.round(HP),
+    ATK: evenDown(ATK),
+    SDM: evenDown(SDM),
+    DEF: evenDown(DEF),
+    CRIT
+  };
 }
+
 function makeUnit(jobName, team){
   const job = JOBS[jobName], d = deriveStats(job);
   const u = new Unit(jobName, team, jobName);
@@ -814,7 +833,7 @@ case 'Electromancer': return [
   label: 'Chain Lightning',
   desc: 'Massive damage. 65% chance to jump to a new random target (any team), repeating.',
   speed: 'normal', type: 'mag', target: 'enemy',
-  base: { min: 85, max: 145 }, statCoef: 0.65,
+  base: { min: 85, max: 145 }, statCoef: 0.65, critBonus:0.15,
   bounceChance: 0.65,
 
   use: async function(a, first){
@@ -879,8 +898,8 @@ case 'Electromancer': return [
     usesMax: 1,
     usesKey: 'god_tempest',
     usesSpendInUse: true,
-    sdmDur: 4,
-    defDur: 4,
+    sdmDur: 5,
+    defDur: 5,
 
     use: function(a){
       if (!a) return;
@@ -1305,7 +1324,7 @@ case 'Warrior': return [
     const guardDur = 3;
 
     pushStatus(a, { key:'def_up', dur:defDur });
-    pushStatus(a, { key:'guard',  dur:guardDur, data:{ pct:0.45 } });
+    pushStatus(a, { key:'guard',  dur:guardDur, data:{ pct:0.50 } });
 
     const healAmt = Math.max(1, Math.floor(a.maxHP * 0.25));
     const out = applyHealAmount(a, a, healAmt, { abilityName:'Last Stand', showVFX:true });
@@ -1383,8 +1402,8 @@ case 'Warrior': return [
        base:{min:65,max:130}, statCoef:0.40, critBonus:0.30,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
-      {label:'Attack', desc:'Hard slice at your enemy.', speed:'fast', type:'phys', target:'enemy',
-       base:{min:65,max:80}, statCoef:0.45, isBasic:true,
+      {label:'Attack', desc:'Hard slice at your enemy.', speed:'normal', type:'phys', target:'enemy',
+       base:{min:65,max:95}, statCoef:0.45, isBasic:true,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:'Poison Dagger', desc:'Cover your blade with poison for this attack.', speed:'normal', type:'phys', target:'enemy',
@@ -1417,7 +1436,7 @@ case 'Warrior': return [
 },
 
       {label:'Shadowstep', desc:'Strike quickly and defend.', speed:'fast', type:'phys', target:'enemy',
-       base:{min:45,max:65}, statCoef:0.30, critBonus:0.25,
+       base:{min:65,max:75}, statCoef:0.30, critBonus:0.25,
        use:function(a,t){
          const r = hit(a,t,{ability:this});
          const dur = buffDurBySDM(a);
@@ -1729,7 +1748,7 @@ t._refresh && t._refresh();
 
     vfxActCue?.(a, 'Arcane Ward');
 
-    const dur = 2;
+    const dur = 3;
     for (const u of allies){
       // add a status key you’ll handle in damage reduction
       pushStatus(u, { key:'magic_shield', dur });
@@ -1748,7 +1767,7 @@ t._refresh && t._refresh();
 
 
 {label:'Fireball', desc:'Large fireball that scorches all foes.', speed:'slow', type:'mag', target:'all-enemies',
-       base:{min:65,max:125}, statCoef:0.50, defPen:0.30,
+       base:{min:65,max:135}, statCoef:0.50, defPen:0.30,
        use:function(a,arr){ for(const t of arr){ if(!t.alive()) continue; hit(a,t,{ability:this}); } } }
 
     ];
@@ -1906,7 +1925,7 @@ t._refresh && t._refresh();
        use:function(a,arr){ for(const t of arr){ if(!t.alive()) continue; hit(a,t,{ability:this}); } } },
 
       {label:'Snipe', desc:'Take careful aim for the vitals.', speed:'slow', type:'phys', target:'enemy',
-       base:{min:60,max:155}, statCoef:0.65, critBonus:0.15,
+       base:{min:65,max:155}, statCoef:0.65, critBonus:0.15,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
       {label:`Hunter's Mark`, desc:'Target takes increased damage until end of next round.', speed:'normal', type:'phys', target:'enemy',
@@ -1953,7 +1972,7 @@ t._refresh && t._refresh();
   speed:'normal', type:'mag', target:'self',
 
   hotDur: 3,
-  hotPct: 0.05, // 5% max HP per round
+  hotPct: 0.10, // 10% max HP per round
 
   use:function(a){
     if (!a) return;
@@ -1994,7 +2013,7 @@ case 'Necromancer': return [
   {
     label:'Life Drain',
     desc:'Steal life from a foe.',
-    speed:'normal', type:'mag', target:'enemy',
+    speed:'fast', type:'mag', target:'enemy',
     base:{min:45,max:75}, statCoef:0.35,
 
     use:function(a,t){
@@ -3489,7 +3508,7 @@ const statusTipFor = (key, u) => {
     case 'shift': return 'Shift: Cannot be targeted with physical.';
     case 'stun': return 'Stun: Cannot act.';
     case 'poison': return 'Poison: Takes damage each round.';
-    case 'bleed': return 'Bleed: Takes physical % damage each round.';
+    case 'bleed': return 'Bleed: Takes physical 15% damage each round.';
     case 'berserk': return 'Berserk: Attack randomly.';
     case 'invisible': return 'Invisible: Targeted attacks miss.';
     case 'marked': return 'Marked: target takes 185% damage.';
@@ -3502,7 +3521,8 @@ const statusTipFor = (key, u) => {
     case 'def_down': return 'DEF Down: Takes more damage.';
     case 'atk_up': return 'ATK Up: Deals more physical damage.';
     case 'sdm_up': return 'SDM Up: Deals more spell damage.';
-    case 'regen': return 'Regenerates a % of HP at end of round.';
+    case 'guard': return '50% damage reduction.';
+    case 'regen': return 'Regenerates 10% of HP at end of round.';
     case 'magic_shield': return 'Magic Sield: Protected from spell damage.';
 
     // fallback: just show the name if you haven't written a description yet
@@ -4229,7 +4249,7 @@ function hit(a, t, opt={}, verb){
 }
 
   let dmgToApply = res.dmg;
-if (a._echoing) dmgToApply = Math.floor(dmgToApply * (a._echoMult || CONFIG.ECHO_MULT || 1.05));
+if (a._echoing) dmgToApply = Math.floor(dmgToApply * (a._echoMult || CONFIG.ECHO_MULT || 1.15));
 if (opt.dmgMult) dmgToApply = Math.floor(dmgToApply * opt.dmgMult);
 if (hasStatus(target,'marked') && dmgToApply>0){
     dmgToApply = Math.floor(dmgToApply*(CONFIG.MARKED_MULT||1.8));
@@ -4242,14 +4262,14 @@ const isMag  = (abType === 'mag');
 // Divine Shield (all damage)
 if (hasStatus(target,'divine_shield') && dmgToApply > 0){
   const before = dmgToApply;
-  dmgToApply = Math.max(1, Math.floor(dmgToApply * 0.33)); // 66% reduction
+  dmgToApply = Math.max(1, Math.floor(dmgToApply * 0.40)); // 60% reduction
   appendLogHTML(`${target.name} is protected by <span style="color:#ffd700">Divine Shield</span>! Damage reduced (${before} → ${dmgToApply}).`);
 }
 
 // Arcane Ward (magic only)
 if (isMag && hasStatus(target, 'magic_shield') && dmgToApply > 0){
   const before = dmgToApply;
-  dmgToApply = Math.max(1, Math.floor(dmgToApply * 0.25)); // 75% reduction
+  dmgToApply = Math.max(1, Math.floor(dmgToApply * 0.40)); // 60% reduction
   appendLogHTML(`${target.name} resists magic with <span style="color:#b084ff">Arcane Ward</span> (${before}→${dmgToApply}).`);
 }
 

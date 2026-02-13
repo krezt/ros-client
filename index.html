@@ -1928,11 +1928,20 @@ t._refresh && t._refresh();
        base:{min:65,max:155}, statCoef:0.65, critBonus:0.15,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
-      {label:`Hunter's Mark`, desc:'Target takes increased damage until end of next round.', speed:'normal', type:'phys', target:'enemy',
-       use:(a,t)=>{ if(!t.alive()) return appendLog(`${t.name} is already down.`);
-         appendLogHTML?.(`<span style="color:#ffd37a">🎯 ${t.name} is <b>marked</b> (2).</span>`)
-        || appendLog(`${t.name} is marked (2).`);
-       }}
+      { label:`Hunter's Mark`,
+  desc:'Target takes increased damage until end of next round.',
+  speed:'normal', type:'phys', target:'enemy',
+  use:(a,t)=>{
+    if (!t?.alive?.()) return appendLog(`${t?.name || 'Target'} is already down.`);
+
+    // refresh mark (no stacking)
+    removeStatusKey(t, 'marked');
+    pushStatus(t, { key:'marked', dur:2 });
+
+    appendLogHTML?.(`<span style="color:#ffd37a">🎯 ${t.name} is <b>marked</b> (2).</span>`)
+      || appendLog(`${t.name} is marked (2).`);
+  }
+}
 
     ];
 

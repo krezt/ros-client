@@ -495,7 +495,7 @@ const CONFIG = {
 
   STACKS: { atk_up:{per:0.5,max:5}, sdm_up:{per:0.5,max:5}, def_up:{per:0.33,max:5}, def_down:{per:0.25,max:5} },
 
-  MARKED_MULT: 1.75,
+  MARKED_MULT: 1.85,
   ECHO_MULT: 1.20,
   SHIELDWALL_GUARD: 0.20,
   COUNTER_COEF: 0.30,
@@ -1928,20 +1928,12 @@ t._refresh && t._refresh();
        base:{min:65,max:155}, statCoef:0.65, critBonus:0.15,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
-      { label:`Hunter's Mark`,
-  desc:'Target takes increased damage until end of next round.',
-  speed:'normal', type:'phys', target:'enemy',
-  use:(a,t)=>{
-    if (!t?.alive?.()) return appendLog(`${t?.name || 'Target'} is already down.`);
+     {label:`Hunter's Mark`, desc:'Target takes increased damage until end of next round.', speed:'normal', type:'phys', target:'enemy',
+       use:(a,t)=>{ if(!t.alive()) return appendLog(`${t.name} is already down.`);
+         pushStatus(t,{key:'marked', dur:2});
+         appendLogHTML(`${a.name} targets ${t.name} with <b>Hunter's Mark</b>. <span style="color:#ffd37a">${t.name} is now very susceptible to damage!</span>`);
+       }}
 
-    // refresh mark (no stacking)
-    removeStatusKey(t, 'marked');
-    pushStatus(t, { key:'marked', dur:2 });
-
-    appendLogHTML?.(`<span style="color:#ffd37a">🎯 ${t.name} is <b>marked</b> (2).</span>`)
-      || appendLog(`${t.name} is marked (2).`);
-  }
-}
 
     ];
 

@@ -966,10 +966,10 @@ const removed = beforeN - a.status.length;
   {
     label: 'Shift',
     desc: 'On cast and 2 additional rounds, dodge all physical type attacks.',
-    speed: 'normal', type: 'mag', target: 'self',
+    speed: 'fast', type: 'mag', target: 'self',
 
     use: function(a){
-      const dur = 3;
+      const dur = 2;
       removeStatusKey(a, 'shift');
       pushStatus(a, { key:'shift', dur });
 
@@ -1260,7 +1260,7 @@ case 'Warrior': return [
     const atkDur = 6;
     pushStatus(a, { key:'atk_up', dur: atkDur });
 
-    const preDur = 2;
+    const preDur = 3;
     pushStatus(a, { key:'premonition', dur: preDur });
 
     const healSpec = { heal:{ min:40, max:60 }, healCoef:0.18, scalesWith:'ATK', type:'mag' };
@@ -1293,10 +1293,10 @@ case 'Warrior': return [
    base:{min:90,max:180}, statCoef:0.60,
    use:function(a,t){ return hit(a,t,{ability:this}); } },
 
-  {label:'Insult', desc:'Taunt an enemy into attacking you.', speed:'normal', type:'mag', target:'enemy',
+  {label:'Insult', desc:'Attempt to taunt an enemy into attacking you.', speed:'normal', type:'mag', target:'enemy',
  use:(a,t)=>{
    if(!t?.alive?.()) return appendLog(`${a.name}'s Taunt has no effect on the dead.`);
-   if(rand()<0.55){
+   if(rand()<0.50){
      const dur = 3; // ✅ always 3 rounds
      applyHardCC(a, t, 'taunt', dur, { data:{ taunter:a }});
 
@@ -1948,11 +1948,11 @@ t._refresh && t._refresh();
 }, 
 
 {label:'Volley', desc:'Rain arrows over the battlefield.', speed:'normal', type:'phys', target:'all-enemies',
-       base:{min:25,max:100}, statCoef:0.30,
+       base:{min:50,max:100}, statCoef:0.30,
        use:function(a,arr){ for(const t of arr){ if(!t.alive()) continue; hit(a,t,{ability:this}); } } },
 
       {label:'Snipe', desc:'Take careful aim for the vitals.', speed:'slow', type:'phys', target:'enemy',
-       base:{min:65,max:165}, statCoef:0.65, critBonus:0.15, defPen:0.30,
+       base:{min:75,max:175}, statCoef:0.65, critBonus:0.15, defPen:0.30,
        use:function(a,t){ return hit(a,t,{ability:this}); } },
 
      {label:`Hunter's Mark`, desc:'Target takes increased damage next two rounds.', speed:'slow', type:'mag', target:'enemy',
@@ -2008,7 +2008,7 @@ t._refresh && t._refresh();
     const removed = cleanseCCAndDebuffs(a);
 
     const dur = this.hotDur ?? 4;
-    const pct = this.hotPct ?? 0.05;
+    const pct = this.hotPct ?? 0.10;
 
     removeStatusKey(a, 'regen'); // refresh instead of stacking
     pushStatus(a, { key:'regen', dur, data:{ pct } });

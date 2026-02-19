@@ -2721,10 +2721,10 @@ function hexToCss(hex){
 
 function vfxSiphonRings(fromUnit, toUnit, {
   ms = 360,
-  color = 0xb084ff,      // purple
+  color = 0xb084ff,
   rings = 3,
-  startR = 6,
-  endR = 16,
+  baseR = 10,        // base circle radius (we animate scale)
+  maxR  = 26,        // visual “expanded” radius
   alpha = 0.22,
   lineW = 2
 } = {}){
@@ -2735,32 +2735,33 @@ function vfxSiphonRings(fromUnit, toUnit, {
   const to   = panelCenterWorld?.(toUnit);
   if (!from || !to) return;
 
-  // small container that moves from A -> B
   const c = scene.add.container(from.x, from.y).setDepth(999);
 
-  // build a few stroked circles
   const circles = [];
+  const scaleUp = Math.max(1.01, maxR / Math.max(1, baseR)); // scale ratio
+
+  const perDelay = Math.max(18, Math.floor(ms * 0.08));
+  let maxDelay = 0;
+
   for (let i=0; i<rings; i++){
-    const circ = scene.add.circle(0, 0, startR, 0x000000, 0);
+    const circ = scene.add.circle(0, 0, baseR, 0x000000, 0);
     circ.setStrokeStyle(lineW, color, alpha);
     circ.setAlpha(alpha);
-    circ.setScale(1);
-    // stagger them a tiny bit so it looks “alive”
-    circ._delay = i * Math.max(20, Math.floor(ms * 0.08));
-    c.add(circ);
-    circles.push(circ);
-  }
 
-  // pulse each ring while the container travels
-  for (const circ of circles){
+    const delay = i * perDelay;
+    maxDelay = Math.max(maxDelay, delay);
+
+    c.add(circ);
+    circles.push({ circ, delay });
+
+    // Pulse via SCALE (safe)
     scene.tweens.add({
       targets: circ,
-      // radius pulse: expand then shrink (yoyo)
-      radius: endR,
+      scale: scaleUp,
       duration: Math.floor(ms * 0.45),
       yoyo: true,
       repeat: 1,
-      delay: circ._delay,
+      delay,
       ease: 'Sine.easeInOut'
     });
 
@@ -2768,21 +2769,27 @@ function vfxSiphonRings(fromUnit, toUnit, {
       targets: circ,
       alpha: alpha * 0.05,
       duration: ms,
-      delay: circ._delay,
+      delay,
       ease: 'Sine.easeOut'
     });
   }
 
-  // move container to target
+  // Move container from caster -> target (don’t destroy here)
   scene.tweens.add({
     targets: c,
     x: to.x,
     y: to.y,
     duration: ms,
-    ease: 'Quad.easeInOut',
-    onComplete: () => c.destroy()
+    ease: 'Quad.easeInOut'
+  });
+
+  // Destroy AFTER the longest delayed pulse has finished
+  const life = ms + maxDelay + Math.floor(ms * 0.95) + 60;
+  scene.time.delayedCall(life, () => {
+    if (c && !c.destroyed) c.destroy(true);
   });
 }
+
 
 // Optional: call once to animate KO a little
 function vfxKO(u){
@@ -2880,35 +2887,42 @@ function vfxHeal(u, amount, opts = {}){
 
 function vfxDeathTouch(target, {
   ms = 420,
-  color = 0xff6b6b,   // red-ish
+  color = 0xff6b6b,
   rings = 3,
-  r0 = 10,
-  r1 = 28,
+  baseR = 12,
+  maxR  = 30,
   alpha = 0.22,
   lineW = 2
 } = {}){
   const scene = getScene?.();
   if (!scene || !target) return;
+
   const p = panelCenterWorld?.(target);
   if (!p) return;
 
   const c = scene.add.container(p.x, p.y).setDepth(999);
+  const scaleUp = Math.max(1.01, maxR / Math.max(1, baseR));
+
+  let maxDelay = 0;
 
   for (let i=0; i<rings; i++){
-    const circ = scene.add.circle(0, 0, r0, 0x000000, 0);
+    const circ = scene.add.circle(0, 0, baseR, 0x000000, 0);
     circ.setStrokeStyle(lineW, color, alpha);
     circ.setAlpha(alpha);
     c.add(circ);
 
-    // expand then collapse (feels like “crush”)
+    const delay = i * 45;
+    maxDelay = Math.max(maxDelay, delay);
+
+    // expand then collapse (crush feel) via SCALE
     scene.tweens.add({
       targets: circ,
-      radius: r1,
+      scale: scaleUp,
       duration: Math.floor(ms * 0.45),
       ease: 'Quad.easeOut',
       yoyo: true,
       repeat: 0,
-      delay: i * 45
+      delay
     });
 
     scene.tweens.add({
@@ -2916,11 +2930,13 @@ function vfxDeathTouch(target, {
       alpha: 0,
       duration: ms,
       ease: 'Sine.easeOut',
-      delay: i * 45
+      delay
     });
   }
 
-  scene.time.delayedCall(ms + 120, () => c.destroy());
+  scene.time.delayedCall(ms + maxDelay + 120, () => {
+    if (c && !c.destroyed) c.destroy(true);
+  });
 }
 
 /* ===== PART 2/4 — ENGINE HELPERS ===== */

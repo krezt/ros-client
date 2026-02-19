@@ -2054,7 +2054,7 @@ case 'Necromancer': return [
         const projMs = (abType === 'mag') ? Math.floor((VFX?.PROJ_MS ?? 260) * 1.15) : (VFX?.PROJ_MS ?? 260);
 
         vfxActCue?.(a, this.label);
-        vfxProjectile?.(a, t, { ms: projMs, color: 0xa7c4ff, radius: 6 });
+        vfxSiphonRings(a, t, { ms: projMs, color: 0xb084ff, rings: 3 });
 
         const scene = getScene?.();
         const impactDelay = Math.max(0, Math.floor(projMs * 0.75));
@@ -2092,7 +2092,7 @@ case 'Necromancer': return [
       const impactDelay = Math.max(0, Math.floor(projMs * 0.90));
 
       vfxActCue?.(a, this.label);
-      vfxProjectile?.(a, t, { ms: projMs, color: 0xa7c4ff, radius: 6 });
+      vfxSiphonRings(a, t, { ms: projMs, color: 0xb084ff, rings: 3 });
 
       const finalT = t;
       const finalA = a;
@@ -2134,13 +2134,29 @@ case 'Necromancer': return [
   },
 
 {label:'Death Touch', desc:'Crush a third of your target\'s HP.', speed:'slow', type:'mag', target:'enemy',
-    use:(a,t)=>{
-      if (!t.alive()) return appendLog(`${t.name} is already down.`);
-      const third = Math.floor(t.hp / 3);
-      t.hp = clamp(t.hp - third, 0, t.maxHP);
-      t._refresh && t._refresh(); checkHPWarnings(t);
-      appendLogHTML(`<span style="color:#ff6b6b">${a.name} invokes Death Touch! ${t.name} loses ${third} HP.</span>`);
-    }},
+  use:(a,t)=>{
+    if (!t.alive()) return appendLog(`${t.name} is already down.`);
+
+    vfxActCue?.(a, 'Death Touch');
+    vfxSiphonRings(a, t, { ms: vfxMs?.(360) ?? 360, color: 0xff6b6b, rings: 3 });
+    // impact feel on target
+    const scene = getScene?.();
+    const delay = Math.max(0, Math.floor((vfxMs?.(360) ?? 360) * 0.90));
+    const doImpact = () => {
+      vfxDeathTouch(t, { color: 0xff6b6b });
+      vfxFloatText?.(t, `-${third}`, { ms: vfxMs?.(1400) ?? 1400, fontSize: 22, color:'#ff6b6b' });
+      vfxFlashColor?.(t, { color: 0xff6b6b, ms: vfxMs?.(260) ?? 260, alpha: 0.18 });
+    };
+    if (scene?.time?.delayedCall) scene.time.delayedCall(delay, doImpact);
+    else doImpact();
+
+    const third = Math.floor(t.hp / 3);
+    t.hp = clamp(t.hp - third, 0, t.maxHP);
+    t._refresh && t._refresh(); checkHPWarnings(t);
+
+    appendLogHTML(`<span style="color:#ff6b6b">${a.name} invokes Death Touch! ${t.name} loses ${third} HP.</span>`);
+  }
+},
 
   {
     label:'Poison Bolt',
@@ -2703,6 +2719,71 @@ function hexToCss(hex){
   return '#' + ((hex >>> 0).toString(16).padStart(6,'0'));
 }
 
+function vfxSiphonRings(fromUnit, toUnit, {
+  ms = 360,
+  color = 0xb084ff,      // purple
+  rings = 3,
+  startR = 6,
+  endR = 16,
+  alpha = 0.22,
+  lineW = 2
+} = {}){
+  const scene = getScene?.();
+  if (!scene || !fromUnit || !toUnit) return;
+
+  const from = panelCenterWorld?.(fromUnit);
+  const to   = panelCenterWorld?.(toUnit);
+  if (!from || !to) return;
+
+  // small container that moves from A -> B
+  const c = scene.add.container(from.x, from.y).setDepth(999);
+
+  // build a few stroked circles
+  const circles = [];
+  for (let i=0; i<rings; i++){
+    const circ = scene.add.circle(0, 0, startR, 0x000000, 0);
+    circ.setStrokeStyle(lineW, color, alpha);
+    circ.setAlpha(alpha);
+    circ.setScale(1);
+    // stagger them a tiny bit so it looks “alive”
+    circ._delay = i * Math.max(20, Math.floor(ms * 0.08));
+    c.add(circ);
+    circles.push(circ);
+  }
+
+  // pulse each ring while the container travels
+  for (const circ of circles){
+    scene.tweens.add({
+      targets: circ,
+      // radius pulse: expand then shrink (yoyo)
+      radius: endR,
+      duration: Math.floor(ms * 0.45),
+      yoyo: true,
+      repeat: 1,
+      delay: circ._delay,
+      ease: 'Sine.easeInOut'
+    });
+
+    scene.tweens.add({
+      targets: circ,
+      alpha: alpha * 0.05,
+      duration: ms,
+      delay: circ._delay,
+      ease: 'Sine.easeOut'
+    });
+  }
+
+  // move container to target
+  scene.tweens.add({
+    targets: c,
+    x: to.x,
+    y: to.y,
+    duration: ms,
+    ease: 'Quad.easeInOut',
+    onComplete: () => c.destroy()
+  });
+}
+
 // Optional: call once to animate KO a little
 function vfxKO(u){
   const scene = getScene();
@@ -2797,6 +2878,50 @@ function vfxHeal(u, amount, opts = {}){
   });
 }
 
+function vfxDeathTouch(target, {
+  ms = 420,
+  color = 0xff6b6b,   // red-ish
+  rings = 3,
+  r0 = 10,
+  r1 = 28,
+  alpha = 0.22,
+  lineW = 2
+} = {}){
+  const scene = getScene?.();
+  if (!scene || !target) return;
+  const p = panelCenterWorld?.(target);
+  if (!p) return;
+
+  const c = scene.add.container(p.x, p.y).setDepth(999);
+
+  for (let i=0; i<rings; i++){
+    const circ = scene.add.circle(0, 0, r0, 0x000000, 0);
+    circ.setStrokeStyle(lineW, color, alpha);
+    circ.setAlpha(alpha);
+    c.add(circ);
+
+    // expand then collapse (feels like “crush”)
+    scene.tweens.add({
+      targets: circ,
+      radius: r1,
+      duration: Math.floor(ms * 0.45),
+      ease: 'Quad.easeOut',
+      yoyo: true,
+      repeat: 0,
+      delay: i * 45
+    });
+
+    scene.tweens.add({
+      targets: circ,
+      alpha: 0,
+      duration: ms,
+      ease: 'Sine.easeOut',
+      delay: i * 45
+    });
+  }
+
+  scene.time.delayedCall(ms + 120, () => c.destroy());
+}
 
 /* ===== PART 2/4 — ENGINE HELPERS ===== */
 /* ---------- Status & stacking ---------- */

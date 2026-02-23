@@ -2987,7 +2987,7 @@ function vfxStatPulse(target, {
   ms = 700,
   color = 0x7cff6b,
   text = 'ATK↑',
-  up = true,            // if false: harsher vibe (shake + stronger tint)
+  up = true,
   radius = 18
 } = {}){
   const scene = getScene?.();
@@ -2997,11 +2997,9 @@ function vfxStatPulse(target, {
   const dur = vfxMs(ms);
   const r = Math.max(8, Math.floor(vfxScale(radius)));
 
-  // readable UI feedback
   vfxFlashColor?.(target, { color, ms: up ? 200 : 240, alpha: up ? 0.20 : 0.28 });
   if (!up) vfxShakePanel?.(target, { px: 2, ms: 160 });
 
-  // Two-beat: ring1 then ring2, deterministic delays
   vfxSiphonRings?.(target, target, {
     ms: Math.floor(dur * 0.65),
     color,
@@ -3010,11 +3008,14 @@ function vfxStatPulse(target, {
     maxR:  r
   });
 
-  vfxFloatText?.(target, text, {
-    ms: vfxMs(750),
-    fontSize: Math.floor(vfxScale(14)),
-    color: hexToCss(color)
-  });
+  // ✅ optional text
+  if (text) {
+    vfxFloatText?.(target, text, {
+      ms: vfxMs(750),
+      fontSize: Math.floor(vfxScale(14)),
+      color: hexToCss(color)
+    });
+  }
 }
 
 function vfxDotTick(target, amount, {
@@ -3367,6 +3368,31 @@ if (key === 'magic_shield') {
   kind = 'buff';
 }
 
+// ---------- AFFLICTION DEBUFFS (red sigil) ----------
+if (key === 'def_down' || key === 'marked') {
+  // Red sigil identity
+  vfxSigilStamp?.(u, {
+    ms: 650,
+    color: 0xff5d6c,
+    bad: true,
+    text: null,
+    spin: true
+  });
+
+  // Clear “what happened” text for the two cases
+  if (key === 'def_down') {
+    vfxStatPulse?.(u, { ms: 650, color: 0xff5d6c, text: 'DEF↓', up: false, radius: 18 });
+  } else {
+    // marked: keep it mean, but simple
+    vfxShakePanel?.(u, { px: 2, ms: 160 });
+  }
+
+  // Extra negative punch (subtle)
+  vfxFlashColor?.(u, { color: 0xff5d6c, ms: vfxMs?.(220) ?? 220, alpha: 0.20 });
+
+  kind = 'debuff';
+}
+
 if (key === 'divine_shield') {
   vfxBarrierBubble?.(u, { ms: 1100, color: 0xffd36b, pulses: 3, text: '' });
   vfxSigilStamp?.(u, { ms: 700, color: 0xffd36b, bad:false, text:null, spin:true });
@@ -3386,11 +3412,6 @@ if (key === 'physical_shield') {
       kind = 'buff';
     }
 
-    if (key === 'marked') {
-      vfxSigilStamp?.(u, { ms: 650, color: 0xffb36b, bad: true, text: null });
-      kind = 'debuff';
-    }
-
     if (key === 'atk_up') {
       vfxStatPulse?.(u, { ms: 650, color: 0x7cff6b, text: 'ATK↑', up: true, radius: 18 });
       kind = 'buff';
@@ -3404,11 +3425,6 @@ if (key === 'physical_shield') {
     if (key === 'sdm_up') {
       vfxStatPulse?.(u, { ms: 650, color: 0xb084ff, text: 'SDM↑', up: true, radius: 18 });
       kind = 'buff';
-    }
-
-    if (key === 'def_down') {
-      vfxStatPulse?.(u, { ms: 650, color: 0xff5d6c, text: 'DEF↓', up: false, radius: 18 });
-      kind = 'debuff';
     }
 
     // NOTE: poison already has its own wrapper pop in addPoison(),
@@ -3426,14 +3442,14 @@ if (key === 'physical_shield') {
     (key === 'poison') ? (VFX_COL?.poison || '#57ff7a') :
     (kind === 'cc')    ? (VFX_COL?.cc     || '#ff6bd6') :
     (kind === 'buff')  ? (VFX_COL?.buff   || '#a7c4ff') :
-    (kind === 'debuff')? (VFX_COL?.debuff || '#ffb36b') :
+    (kind === 'debuff')? (VFX_COL?.debuff || '#ff5d6c') :
                          '#ffffff';
 
   const hex =
     (key === 'poison') ? 0x57ff7a :
     (kind === 'cc')    ? 0xff6bd6 :
     (kind === 'buff')  ? 0xa7c4ff :
-    (kind === 'debuff')? 0xffb36b :
+    (kind === 'debuff')? 0xff5d6c :
                          0xffffff;
 
   try {

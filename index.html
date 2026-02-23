@@ -1816,9 +1816,20 @@ t._refresh && t._refresh();
    return r;
  }},
 
- {label:'Divine Shield', desc:'One ally takes no damage this round.', speed:'fast', type:'mag', target:'ally',
-       use:(a,t)=>{ pushStatus(t,{key:'divine_shield', dur:1}); appendLog(`${a.name} acts heroically, ${t.name} is protected by Divine Shield.`); }},
+ { label:'Divine Shield',
+  desc:'One ally takes no damage this round.',
+  speed:'fast', type:'mag', target:'ally',
+  use:(a,t)=>{
+    pushStatus(t, { key:'divine_shield', dur:1 });  // ✅ leave showVFX ON
+    appendLog(`${a.name} acts heroically, ${t.name} is protected by Divine Shield.`);
 
+    // Optional cosmetic: show caster + travel (status VFX will handle the “bubble”)
+    try {
+      vfxActCue?.(a, 'Divine Shield');
+      vfxProjectile?.(a, t, { ms: vfxMs?.(240) ?? 240, color: 0xffd36b, radius: 5 });
+    } catch {}
+  }
+},
 
 {
   label:'Cleanse',
@@ -2818,6 +2829,306 @@ function vfxSiphonRings(fromUnit, toUnit, {
   });
 }
 
+function vfxSigilStamp(target, {
+  ms = 650,
+  color = 0x8a4dff,
+  alpha = 0.85,
+  radius = 18,
+  lineW = 3,
+  spin = true,
+  bad = false,          // if true: slightly harsher scale + micro shake
+  text = null,          // e.g. 'CURSED', 'MARK'
+  textColor = null,     // css string or null -> derived from color
+} = {}){
+  const scene = getScene?.();
+  const p = vfxWorldPos(target);
+  if (!scene || !p) return;
+
+  const dur = vfxMs(ms);
+  const r = Math.max(8, Math.floor(vfxScale(radius)));
+  const lw = Math.max(1, Math.floor(vfxScale(lineW)));
+
+  const c = scene.add.container(p.x, p.y).setDepth(vfxDepth(999999));
+
+  // Ring
+  const ring = scene.add.circle(0, 0, r, color, 0.06);
+  ring.setStrokeStyle(lw, color, 1);
+  ring.setAlpha(alpha);
+  ring.setBlendMode?.(Phaser.BlendModes.ADD);
+  c.add(ring);
+
+  // Simple glyph (deterministic): 3 lines (triangle-ish)
+  const g = scene.add.graphics();
+  g.lineStyle(lw, color, 1);
+  g.setAlpha(alpha);
+  g.setBlendMode?.(Phaser.BlendModes.ADD);
+
+  const rr = Math.floor(r * 0.72);
+  // triangle-ish / sigil lines
+  g.strokeLineShape(new Phaser.Geom.Line(0, -rr,  rr, rr));
+  g.strokeLineShape(new Phaser.Geom.Line(rr, rr, -rr, rr));
+  g.strokeLineShape(new Phaser.Geom.Line(-rr, rr, 0, -rr));
+  c.add(g);
+
+  // Entry punch
+  c.setScale(bad ? 0.85 : 0.90);
+  scene.tweens.add({
+    targets: c,
+    scale: bad ? 1.12 : 1.05,
+    duration: Math.floor(dur * 0.35),
+    yoyo: true,
+    ease: 'Quad.easeOut'
+  });
+
+  if (spin){
+    scene.tweens.add({
+      targets: c,
+      angle: 360,
+      duration: dur,
+      ease: 'Linear'
+    });
+  }
+
+  // Fade out
+  scene.tweens.add({
+    targets: [ring, g],
+    alpha: 0,
+    duration: dur,
+    ease: 'Sine.easeOut'
+  });
+
+  // Optional micro “bad” shake (cosmetic only)
+  if (bad){
+    scene.tweens.add({
+      targets: c,
+      x: p.x + vfxScale(2),
+      duration: Math.floor(dur * 0.12),
+      yoyo: true,
+      repeat: 2,
+      ease: 'Sine.easeInOut'
+    });
+  }
+
+  // Optional label
+  if (text){
+    try {
+      vfxFloatText?.(target, text, {
+        ms: vfxMs(Math.max(500, Math.floor(ms * 1.1))),
+        fontSize: Math.floor(vfxScale(14)),
+        color: (textColor || hexToCss(color))
+      });
+    } catch {}
+  }
+
+  scene.time.delayedCall(dur + 80, () => vfxSafeDestroy(c));
+}
+
+function vfxBarrierBubble(target, {
+  ms = 900,
+  color = 0x66e3ff,
+  pulses = 2,
+  radius = 22,
+  lineW = 3,
+  alpha = 0.75,
+  fillAlpha = 0.05,
+  flashPanel = true,
+  text = 'SHIELD'
+} = {}){
+  const scene = getScene?.();
+  const p = vfxWorldPos(target);
+  if (!scene || !p) return;
+
+  const dur = vfxMs(ms);
+  const r0 = Math.max(10, Math.floor(vfxScale(radius)));
+  const lw = Math.max(1, Math.floor(vfxScale(lineW)));
+
+  if (flashPanel) vfxFlashPanel?.(target, { ms: 140 });
+  vfxFlashColor?.(target, { color, ms: 200, alpha: 0.22 });
+
+  const c = scene.add.container(p.x, p.y).setDepth(vfxDepth(999999));
+
+  const ring = scene.add.circle(0, 0, r0, color, fillAlpha);
+  ring.setStrokeStyle(lw, color, 1);
+  ring.setAlpha(alpha);
+  ring.setBlendMode?.(Phaser.BlendModes.ADD);
+  c.add(ring);
+
+  // Pulses: scale up/down repeatedly
+  const up = 1.35;
+  scene.tweens.add({
+    targets: ring,
+    scale: up,
+    duration: Math.floor(dur * 0.35),
+    yoyo: true,
+    repeat: Math.max(0, (pulses * 2) - 1),
+    ease: 'Sine.easeInOut'
+  });
+
+  // Fade out slowly
+  scene.tweens.add({
+    targets: ring,
+    alpha: 0,
+    duration: dur,
+    ease: 'Sine.easeOut'
+  });
+
+  if (text){
+    vfxFloatText?.(target, text, {
+      ms: vfxMs(700),
+      fontSize: Math.floor(vfxScale(14)),
+      color: hexToCss(color)
+    });
+  }
+
+  scene.time.delayedCall(dur + 90, () => vfxSafeDestroy(c));
+}
+
+function vfxStatPulse(target, {
+  ms = 700,
+  color = 0x7cff6b,
+  text = 'ATK↑',
+  up = true,            // if false: harsher vibe (shake + stronger tint)
+  radius = 18
+} = {}){
+  const scene = getScene?.();
+  const p = vfxWorldPos(target);
+  if (!scene || !p) return;
+
+  const dur = vfxMs(ms);
+  const r = Math.max(8, Math.floor(vfxScale(radius)));
+
+  // readable UI feedback
+  vfxFlashColor?.(target, { color, ms: up ? 200 : 240, alpha: up ? 0.20 : 0.28 });
+  if (!up) vfxShakePanel?.(target, { px: 2, ms: 160 });
+
+  // Two-beat: ring1 then ring2, deterministic delays
+  vfxSiphonRings?.(target, target, {
+    ms: Math.floor(dur * 0.65),
+    color,
+    rings: 2,
+    baseR: Math.max(6, Math.floor(r * 0.40)),
+    maxR:  r
+  });
+
+  vfxFloatText?.(target, text, {
+    ms: vfxMs(750),
+    fontSize: Math.floor(vfxScale(14)),
+    color: hexToCss(color)
+  });
+}
+
+function vfxDotTick(target, amount, {
+  kind = 'poison',   // 'poison' | 'bleed' | 'curse'
+  ms = 260
+} = {}){
+  const scene = getScene?.();
+  if (!scene || !target) return;
+
+  const dur = vfxMs(ms);
+
+  let color = 0x37ff5a;
+  let text  = 'POISON';
+  let shake = false;
+
+  if (kind === 'bleed'){ color = 0xff4a4a; text = 'BLEED'; shake = true; }
+  if (kind === 'curse'){ color = 0x8a4dff; text = 'CURSE'; }
+
+  // micro pulse
+  vfxFlashColor?.(target, { color, ms: Math.floor(dur * 0.55), alpha: 0.20 });
+  if (shake) vfxShakePanel?.(target, { px: 2, ms: Math.floor(dur * 0.7) });
+
+  // tiny ring or collapse vibe
+  if (kind === 'curse'){
+    // inward feel: baseR>maxR handled by scale? We’ll fake by using a quick small pulse
+    vfxSiphonRings?.(target, target, { ms: Math.floor(dur * 0.9), color, rings: 1, baseR: 12, maxR: 6 });
+  } else {
+    vfxSiphonRings?.(target, target, { ms: Math.floor(dur * 0.9), color, rings: 1, baseR: 6, maxR: 16 });
+  }
+
+  // numbers
+  vfxDamage?.(target, amount, { crit:false, kind });
+
+  // optional tiny label (subtle)
+  vfxFloatText?.(target, text, {
+    ms: vfxMs(520),
+    fontSize: Math.floor(vfxScale(12)),
+    color: hexToCss(color)
+  });
+}
+
+function vfxUltimateWave(caster, targets, {
+  label = 'ULTIMATE',
+  chargeMs = 900,
+  chargeColor = 0xffffff,
+  proj = null,                 // { ms, color, radius } or null
+  impactMs = 220,
+  impactColor = 0xffffff,
+  staggerMs = 70,
+  shakePx = 4,
+  onImpact = null              // (t, i) => {}
+} = {}){
+  const scene = getScene?.();
+  const list = (targets || []).filter(Boolean);
+  if (!scene || !list.length) return;
+
+  const ms = (x)=> (typeof vfxMs==='function' ? vfxMs(x) : (x|0));
+
+  // Stable ordering for deterministic AoE
+  const ordered = [...list].sort((a,b)=>
+    String(a.netId ?? a.name ?? '').localeCompare(String(b.netId ?? b.name ?? ''))
+  );
+
+  // Announce once
+  if (caster && label) vfxActCue?.(caster, label);
+
+  // Charge on caster
+  if (caster){
+    vfxSiphonRings?.(caster, caster, {
+      ms: ms(chargeMs),
+      color: chargeColor,
+      rings: 3,
+      baseR: 10,
+      maxR: 40,
+      alpha: 0.70,
+      lineW: 3
+    });
+    vfxFlashColor?.(caster, { color: chargeColor, ms: ms(220), alpha: 0.18 });
+  }
+
+  // Impacts
+  const step = ms(staggerMs);
+  ordered.forEach((t, i) => {
+    const d = i * step;
+
+    scene.time.delayedCall(d, () => {
+      // optional projectile from caster to each target (still deterministic)
+      if (proj && caster && caster !== t){
+        vfxProjectile?.(caster, t, {
+          ms: ms(proj.ms ?? 260),
+          color: proj.color ?? impactColor,
+          radius: proj.radius ?? 5
+        });
+      }
+
+      // impact burst
+      vfxFlashPanel?.(t, { ms: impactMs });
+      vfxFlashColor?.(t, { color: impactColor, ms: impactMs, alpha: 0.22 });
+      vfxShakePanel?.(t, { px: shakePx, ms: impactMs + 80 });
+
+      try { onImpact?.(t, i); } catch {}
+    });
+  });
+}
+
+function vfxDepth(n=999999){ return n; }
+
+function vfxWorldPos(u){
+  return panelCenterWorld?.(u) || null;
+}
+
+function vfxSafeDestroy(obj){
+  try { if (obj && !obj.destroyed) obj.destroy(true); } catch {}
+}
 
 
 // Optional: call once to animate KO a little
@@ -2863,6 +3174,78 @@ function vfxDodge(u){
 function vfxStatus(u, key, { dur=null, kind='cc' } = {}){
   if (!u) return;
 
+  // ---------- SPECIAL CASES (cosmetic only) ----------
+  try {
+    if (key === 'divine_shield') {
+      // Holy gold bubble + optional sigil stamp
+      vfxBarrierBubble?.(u, {
+        ms: 1100,
+        color: 0xffd36b,
+        pulses: 3,
+        text: '' // we’ll do text below once (avoid double text)
+      });
+
+      // Optional: stamp to make it feel “divine”
+      vfxSigilStamp?.(u, {
+        ms: 700,
+        color: 0xffd36b,
+        bad: false,
+        text: null,
+        spin: true
+      });
+
+      // A tiny extra holy flash (kept subtle)
+      vfxFlashColor?.(u, { color: 0xfff3b0, ms: vfxMs?.(220) ?? 220, alpha: 0.14 });
+
+      // Continue to unified text at bottom (don’t return)
+      kind = 'buff';
+    }
+
+    if (key === 'magic_shield') {
+      vfxBarrierBubble?.(u, { ms: 950, color: 0x66e3ff, pulses: 2, text: '' });
+      kind = 'buff';
+    }
+
+    if (key === 'guard') {
+      vfxStatPulse?.(u, { ms: 650, color: 0xa7c4ff, text: 'GUARD', up: true, radius: 18 });
+      kind = 'buff';
+    }
+
+    if (key === 'marked') {
+      vfxSigilStamp?.(u, { ms: 650, color: 0xffb36b, bad: true, text: null });
+      kind = 'debuff';
+    }
+
+    if (key === 'atk_up') {
+      vfxStatPulse?.(u, { ms: 650, color: 0x7cff6b, text: 'ATK↑', up: true, radius: 18 });
+      kind = 'buff';
+    }
+
+    if (key === 'def_up') {
+      vfxStatPulse?.(u, { ms: 650, color: 0xa7c4ff, text: 'DEF↑', up: true, radius: 18 });
+      kind = 'buff';
+    }
+
+    if (key === 'sdm_up') {
+      vfxStatPulse?.(u, { ms: 650, color: 0xb084ff, text: 'SDM↑', up: true, radius: 18 });
+      kind = 'buff';
+    }
+
+    if (key === 'def_down') {
+      vfxStatPulse?.(u, { ms: 650, color: 0xff5d6c, text: 'DEF↓', up: false, radius: 18 });
+      kind = 'debuff';
+    }
+
+    // NOTE: poison already has its own wrapper pop in addPoison(),
+    // but pushStatus('poison') can still happen; this keeps it consistent.
+    if (key === 'poison') {
+      vfxFlashColor?.(u, { color: 0x57ff7a, ms: vfxMs?.(260) ?? 260, alpha: 0.18 });
+      // no return; unified text still happens
+      kind = 'debuff';
+    }
+  } catch {}
+
+  // ---------- DEFAULT BEHAVIOR (your existing code) ----------
   const label = VFX_TEXT?.[key] || String(key || '').toUpperCase();
   const col =
     (key === 'poison') ? (VFX_COL?.poison || '#57ff7a') :
@@ -2871,7 +3254,6 @@ function vfxStatus(u, key, { dur=null, kind='cc' } = {}){
     (kind === 'debuff')? (VFX_COL?.debuff || '#ffb36b') :
                          '#ffffff';
 
-  // flash color overlay + label pop
   const hex =
     (key === 'poison') ? 0x57ff7a :
     (kind === 'cc')    ? 0xff6bd6 :
@@ -2880,6 +3262,8 @@ function vfxStatus(u, key, { dur=null, kind='cc' } = {}){
                          0xffffff;
 
   try {
+    // For divine_shield we already flashed; but doing a light default flash is OK.
+    // If you want ZERO extra flash for divine_shield, wrap this in: if (key!=='divine_shield') ...
     if (typeof vfxFlashColor === 'function'){
       vfxFlashColor(u, { color: hex, ms: vfxMs?.(260) ?? 260, alpha: 0.18 });
     } else {
@@ -2887,14 +3271,13 @@ function vfxStatus(u, key, { dur=null, kind='cc' } = {}){
     }
   } catch {}
 
-  // IMPORTANT: respect global tuning knobs
+  // SINGLE source of text
   vfxFloatText?.(u, dur ? `${label} (${dur})` : label, {
     color: col,
     fontSize: Math.floor((typeof vfxScale === 'function' ? vfxScale(18) : 18)),
     ms: (typeof vfxMs === 'function' ? vfxMs(1200) : 1200)
   });
 }
-
 
 function vfxHeal(u, amount, opts = {}){
   if (!u || !amount) return;
@@ -3719,7 +4102,7 @@ const statusTipFor = (key, u) => {
     case 'def_down': return 'DEF Down: Takes more damage.';
     case 'atk_up': return 'ATK Up: Deals more physical damage.';
     case 'sdm_up': return 'SDM Up: Deals more spell damage.';
-    case 'guard': return '50% damage reduction.';
+    case 'guard': return 'Heavy damage mitigation.';
     case 'regen': return 'Regenerates 10% of HP at end of round.';
     case 'magic_shield': return 'Magic Sield: Protected from spell damage.';
 
@@ -4057,7 +4440,8 @@ if (!u.alive()) continue;
         u.hp = clamp(u.hp - poisonDealt, 0, u.maxHP);
         syncDeathState?.(u);
 
-        vfxPoisonTick(u, poisonDealt);
+        // poison tick
+vfxDotTick(u, tickAmt, { kind:'poison' });
 
         p.data.contributions = p.data.contributions
           .map(c => ({ amt: Math.floor(c.amt * 0.85) }))
@@ -4090,12 +4474,8 @@ if (!u.alive()) continue;
       u.hp = clamp(u.hp - bleedDealt, 0, u.maxHP);
       syncDeathState?.(u);
 
-      vfxFlashColor?.(u, { color: 0xff4d4d, ms: vfxMs(260), alpha: 0.26 });
-      vfxFloatText?.(u, `-${bleedDealt} BLEED`, {
-        ms: vfxMs(1600),
-        fontSize: Math.floor(vfxScale(16)),
-        color: '#ff7a7a'
-      });
+      // bleed tick
+vfxDotTick(u, tickAmt, { kind:'bleed' });
 
       appendLogHTML?.(`<span style="color:#ff7a7a">🩸 ${u.name} takes ${bleedDealt} bleed damage.</span>`);
 

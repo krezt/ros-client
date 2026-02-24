@@ -3008,7 +3008,7 @@ function vfxStatPulse(target, {
     maxR:  r
   });
 
-  // ✅ optional text
+  // optional text
   if (text) {
     vfxFloatText?.(target, text, {
       ms: vfxMs(750),
@@ -3381,7 +3381,7 @@ if (key === 'def_down' || key === 'marked') {
 
   // Clear “what happened” text for the two cases
   if (key === 'def_down') {
-    vfxStatPulse?.(u, { ms: 650, color: 0xff5d6c, text: 'DEF↓', up: false, radius: 18 });
+    vfxStatPulse?.(u, { ms: 650, color: 0xff5d6c, text: '', up:false, radius: 18 });
   } else {
     // marked: keep it mean, but simple
     vfxShakePanel?.(u, { px: 2, ms: 160 });
@@ -3436,8 +3436,29 @@ if (key === 'physical_shield') {
     }
   } catch {}
 
+function prettyStatusLabel(key){
+  // Prefer your short UI language
+  return (
+    key === 'def_up' ? 'DEF↑' :
+    key === 'def_down' ? 'DEF↓' :
+    key === 'atk_up' ? 'ATK↑' :
+    key === 'sdm_up' ? 'SDM↑' :
+    key === 'magic_shield' ? 'MAGIC SHIELD' :
+    key === 'divine_shield' ? 'DIVINE SHIELD' :
+    key === 'physical_shield' ? 'PHYSICAL SHIELD' :
+    key === 'shield_redirect' ? 'INTERCEPT' :
+    key === 'shinobi_haste' ? 'HASTE' :
+    key === 'invisible' ? 'INVIS' :
+    key === 'premonition' ? 'FAST' :
+    key === 'arcane_echo' ? 'ECHO' :
+    key === 'guard' ? 'GUARD' :
+    key === 'marked' ? 'MARKED' :
+    String(key || '').replace(/_/g,' ').toUpperCase()
+  );
+}
+
   // ---------- DEFAULT BEHAVIOR (your existing code) ----------
-  const label = VFX_TEXT?.[key] || String(key || '').toUpperCase();
+  const label = VFX_TEXT?.[key] || prettyStatusLabel(key);
   const col =
     (key === 'poison') ? (VFX_COL?.poison || '#57ff7a') :
     (kind === 'cc')    ? (VFX_COL?.cc     || '#ff6bd6') :
@@ -3452,15 +3473,19 @@ if (key === 'physical_shield') {
     (kind === 'debuff')? 0xff5d6c :
                          0xffffff;
 
-  try {
-    // For divine_shield we already flashed; but doing a light default flash is OK.
-    // If you want ZERO extra flash for divine_shield, wrap this in: if (key!=='divine_shield') ...
+  
+const skipDefaultFlash =
+  (key === 'magic_shield' || key === 'divine_shield' || key === 'physical_shield');
+
+try {
+  if (!skipDefaultFlash){
     if (typeof vfxFlashColor === 'function'){
       vfxFlashColor(u, { color: hex, ms: vfxMs?.(260) ?? 260, alpha: 0.18 });
     } else {
       vfxFlashPanel?.(u, { ms: vfxMs?.(250) ?? 250 });
     }
-  } catch {}
+  }
+} catch {}
 
   // SINGLE source of text
   vfxFloatText?.(u, dur ? `${label} (${dur})` : label, {

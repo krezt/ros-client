@@ -915,22 +915,6 @@ if ((this.usesMax|0) > 0 && !spendUse(a, this)) {
   return;
 }
 
-
-      // ---- CLEANSE ALL NEGATIVES ----
-      // Your engine doesn't tag statuses with "kind", so we need an explicit list.
- const NEGATIVE_KEYS = new Set([
-  'stun','taunt','blind','berserk',
-  'def_down','poison','bleed',
-  'marked'
-]);
-
-const POSITIVE_KEYS = new Set([
-  'def_up','atk_up','sdm_up',
-  'guard','divine_shield','shield_redirect','counter','premonition',
-  'arcane_echo',
-  'invisible','shift','shinobi_haste','magic_shield'
-]);
-
       const beforeN = (a.status || []).length;
 a.status = (a.status || []).filter(s => !NEGATIVE_KEYS.has(s.key));
 const removed = beforeN - a.status.length;
@@ -2196,7 +2180,13 @@ case 'Necromancer': return [
       if (!t || typeof t.alive !== 'function' || !t.alive()) return r;
       if (r.dodged || (r.dealt|0) <= 0) return r;
 
-      const removed = (typeof stripOnePositive === 'function') ? stripOnePositive(t) : null;
+      let removed = null;
+try {
+  removed = (typeof stripOnePositive === 'function') ? stripOnePositive(t) : null;
+} catch (e) {
+  console.warn('[stripOnePositive]', e);
+  removed = null;
+}
 
       const poisonAmt = Math.max(1, Math.floor((r.dealt|0) * 0.60));
       addPoison(t, poisonAmt);
@@ -2741,6 +2731,32 @@ function vfxCastToTargets(caster, targets, {
 
 function hexToCss(hex){
   return '#' + ((hex >>> 0).toString(16).padStart(6,'0'));
+}
+
+function vfxDispelPop(target, {
+  ms = 650,
+  color = 0xff5d6c,
+  text = 'DISPEL',
+  showText = true
+} = {}){
+  if (!target) return;
+
+  try {
+    // Red “bad” sigil stamp
+    vfxSigilStamp?.(target, { ms, color, bad:true, text:null, spin:true });
+
+    // Small snap flash (subtle)
+    vfxFlashColor?.(target, { color, ms: (typeof vfxMs==='function' ? vfxMs(220) : 220), alpha: 0.18 });
+
+    // Optional text (turn off if it’s too busy)
+    if (showText && text) {
+      vfxFloatText?.(target, text, {
+        ms: (typeof vfxMs==='function' ? vfxMs(800) : 800),
+        fontSize: Math.floor((typeof vfxScale==='function' ? vfxScale(14) : 14)),
+        color: hexToCss?.(color) || '#ff5d6c'
+      });
+    }
+  } catch {}
 }
 
 function vfxSiphonRings(fromUnit, toUnit, {
@@ -3408,22 +3424,22 @@ if (key === 'physical_shield') {
 }
 
     if (key === 'guard') {
-      vfxStatPulse?.(u, { ms: 650, color: 0xa7c4ff, text: 'GUARD', up: true, radius: 18 });
+      vfxStatPulse?.(u, { ms: 650, color: 0xa7c4ff, text: '', up: true, radius: 18 });
       kind = 'buff';
     }
 
     if (key === 'atk_up') {
-      vfxStatPulse?.(u, { ms: 650, color: 0x7cff6b, text: 'ATK↑', up: true, radius: 18 });
+      vfxStatPulse?.(u, { ms: 650, color: 0x7cff6b, text: '', up: true, radius: 18 });
       kind = 'buff';
     }
 
     if (key === 'def_up') {
-      vfxStatPulse?.(u, { ms: 650, color: 0xa7c4ff, text: 'DEF↑', up: true, radius: 18 });
+      vfxStatPulse?.(u, { ms: 650, color: 0xa7c4ff, text: '', up: true, radius: 18 });
       kind = 'buff';
     }
 
     if (key === 'sdm_up') {
-      vfxStatPulse?.(u, { ms: 650, color: 0xb084ff, text: 'SDM↑', up: true, radius: 18 });
+      vfxStatPulse?.(u, { ms: 650, color: 0xb084ff, text: '', up: true, radius: 18 });
       kind = 'buff';
     }
 
@@ -3571,6 +3587,20 @@ function vfxDeathTouch(target, {
 /* ---------- Status & stacking ---------- */
 const STACKABLE = new Set(['atk_up','sdm_up','def_up','def_down']);
 
+// Status categories (single source of truth)
+const NEGATIVE_KEYS = new Set([
+  'stun','taunt','blind','berserk',
+  'def_down','poison','bleed',
+  'marked'
+]);
+
+const POSITIVE_KEYS = new Set([
+  'def_up','atk_up','sdm_up',
+  'guard','divine_shield','shield_redirect','counter','premonition',
+  'arcane_echo',
+  'invisible','shift','shinobi_haste','magic_shield','physical_shield'
+]);
+
 function hasStatus(u,key){ return u.status && u.status.some(s=>s.key===key); }
 
 function countStacks(u, key){ let n=0; for(const s of (u.status||[])) if (s.key===key) n++; return n; }
@@ -3638,6 +3668,31 @@ function pushStatus(u, st, opts = null){
       }
     } catch {}
   }
+}
+
+function stripOnePositive(target){
+  if (!target || !Array.isArray(target.status) || !target.status.length) return null;
+
+  // most recent = scan from end (deterministic)
+  let idx = -1;
+  for (let i = target.status.length - 1; i >= 0; i--){
+    const s = target.status[i];
+    if (s && POSITIVE_KEYS.has(s.key)) { idx = i; break; }
+  }
+  if (idx < 0) return null;
+
+  const removed = target.status[idx];
+  target.status.splice(idx, 1);
+
+  // cosmetic: dispel pop
+  try { vfxDispelPop?.(target, { color: 0xff5d6c, text: 'DISPEL', showText: true }); } catch {}
+
+  // cosmetic refresh only
+  try { target._refresh?.(); } catch {}
+  try { updateStatusView?.(target); } catch {}
+
+  const k = removed?.key || '';
+  return (typeof prettyStatusLabel === 'function') ? prettyStatusLabel(k) : k;
 }
 
 function getUsesState(u){

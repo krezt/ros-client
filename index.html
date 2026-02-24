@@ -4660,7 +4660,7 @@ if (!u.alive()) continue;
         syncDeathState?.(u);
 
         // poison tick
-vfxDotTick(u, tickAmt, { kind:'poison' });
+vfxDotTick?.(u, poisonDealt, { kind:'poison' });
 
         p.data.contributions = p.data.contributions
           .map(c => ({ amt: Math.floor(c.amt * 0.85) }))
@@ -4694,7 +4694,7 @@ vfxDotTick(u, tickAmt, { kind:'poison' });
       syncDeathState?.(u);
 
       // bleed tick
-vfxDotTick(u, tickAmt, { kind:'bleed' });
+vfxDotTick?.(u, bleedDealt, { kind:'bleed' });
 
       appendLogHTML?.(`<span style="color:#ff7a7a">🩸 ${u.name} takes ${bleedDealt} bleed damage.</span>`);
 

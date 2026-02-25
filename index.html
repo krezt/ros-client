@@ -4319,10 +4319,10 @@ ui._statusTip ||= scene.add.text(0, 0, '', {
 const effQKN  = baseQKN * qknMult(u);
 
 ui.statsTxt.setText(
-  `ATK ${effATK.toFixed(1)}  •  SDM ${effSDM.toFixed(1)}  •  DEF ${effDEF.toFixed(1)}  •  QKN ${effQKN.toFixed(0)}`
+  `ATK ${Math.round(effATK)}  •  SDM ${Math.round(effSDM)}  •  DEF ${Math.round(effDEF)}  •  QKN ${Math.round(effQKN)}`
 );
 
-fitTextToWidth(ui.statsTxt, ui.statsMaxW, { minSize: 12 });
+fitTextToWidth(ui.statsTxt, ui.statsMaxW, { minSize: 14 });
 
   ui.statusNodes ||= []; for (const n of ui.statusNodes) n.destroy(); ui.statusNodes.length=0;
   try { vfxSyncShieldAuras?.(u); } catch {}

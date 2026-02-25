@@ -2179,7 +2179,8 @@ case 'Necromancer': return [
 
       if (!t || typeof t.alive !== 'function' || !t.alive()) return r;
       if (r.dodged || (r.dealt|0) <= 0) return r;
-
+// VFX: poison is always green, distinct from sigils
+vfxPoisonBolt?.(a, t, { color: 0x57ff7a, showText: false });
       let removed = null;
 try {
   removed = (typeof stripOnePositive === 'function') ? stripOnePositive(t) : null;
@@ -2245,7 +2246,13 @@ try {
           vfxCastToTargets(a, targets, {
             label: '',
             proj: { ms: projMsRaw, color: 0x57ff7a, radius: 7 },
-            onImpact: (t) => vfxFlashColor?.(t, { color: 0x57ff7a, ms: ms(350), alpha: 0.25 }),
+            onImpact: (t) => {
+  // poison bloom impact (no sigil)
+  vfxFlashColor?.(t, { color: 0x57ff7a, ms: ms(320), alpha: 0.20 });
+  vfxSiphonRings?.(t, t, { ms: ms(520), color: 0x57ff7a, rings: 2, baseR: 10, maxR: 26, alpha: 0.40, lineW: 3 });
+  // subtle linger pulse
+  vfxSiphonRings?.(t, t, { ms: ms(1250), color: 0x57ff7a, rings: 1, baseR: 14, maxR: 22, alpha: 0.16, lineW: 2 });
+},
             staggerMs: (VFX?.AOE_STAGGER_MS ?? 140)
           });
         }
@@ -2733,6 +2740,96 @@ function hexToCss(hex){
   return '#' + ((hex >>> 0).toString(16).padStart(6,'0'));
 }
 
+function vfxPoisonBolt(caster, target, {
+  msHold = 450,
+  msTravel = 520,
+  msImpact = 520,
+  msLinger = 1250,
+  color = 0x57ff7a,     // ✅ always green by default
+  radius = 6,
+  showText = false      // keep quiet by default
+} = {}){
+  const scene = getScene?.();
+  if (!scene || !caster || !target) return;
+
+  const from = vfxWorldPos?.(caster);
+  const to   = vfxWorldPos?.(target);
+  if (!from || !to) return;
+
+  const hold   = vfxMs?.(msHold)   ?? msHold;
+  const travel = vfxMs?.(msTravel) ?? msTravel;
+  const impact = vfxMs?.(msImpact) ?? msImpact;
+  const linger = vfxMs?.(msLinger) ?? msLinger;
+
+  // (1) Caster charge: quick double ring pulse (no text)
+  try {
+    vfxSiphonRings?.(caster, caster, {
+      ms: Math.floor(hold),
+      color,
+      rings: 2,
+      baseR: 8,
+      maxR:  18,
+      alpha: 0.45,
+      lineW: 3
+    });
+    vfxFlashColor?.(caster, { color, ms: Math.floor(hold * 0.65), alpha: 0.10 });
+  } catch {}
+
+  // (2) Travel: green orb projectile (your existing lightweight dot)
+  const doTravel = () => {
+    try {
+      vfxProjectile?.(caster, target, {
+        ms: travel,
+        color,
+        radius
+      });
+    } catch {}
+
+    // (3) Impact: toxic bloom (ring + flash) + optional label
+    const doImpact = () => {
+      try {
+        vfxFlashColor?.(target, { color, ms: Math.floor(impact * 0.55), alpha: 0.18 });
+
+        // bloom ring(s)
+        vfxSiphonRings?.(target, target, {
+          ms: impact,
+          color,
+          rings: 2,
+          baseR: 10,
+          maxR:  26,
+          alpha: 0.42,
+          lineW: 3
+        });
+
+        // (4) Linger: faint slow pulse ring (subtle)
+        vfxSiphonRings?.(target, target, {
+          ms: linger,
+          color,
+          rings: 1,
+          baseR: 14,
+          maxR:  22,
+          alpha: 0.18,
+          lineW: 2
+        });
+
+        if (showText) {
+          vfxFloatText?.(target, 'POISON', {
+            ms: vfxMs?.(800) ?? 800,
+            fontSize: Math.floor(vfxScale?.(14) ?? 14),
+            color: (VFX_COL?.poison || '#57ff7a')
+          });
+        }
+      } catch {}
+    };
+
+    // impact timing aligned to projectile duration (like your cast helper)
+    const impactDelay = Math.max(0, Math.floor(travel * 0.90));
+    scene.time.delayedCall(impactDelay, doImpact);
+  };
+
+  scene.time.delayedCall(Math.max(0, hold), doTravel);
+}
+
 function vfxDispelPop(target, {
   ms = 650,
   color = 0xff5d6c,
@@ -2843,6 +2940,171 @@ function vfxSiphonRings(fromUnit, toUnit, {
   scene.time.delayedCall(life, () => {
     if (c && !c.destroyed) c.destroy(true);
   });
+}
+
+function vfxBuildSigilNode(scene, {
+  color = 0x8a4dff,
+  alpha = 0.85,
+  radius = 18,
+  lineW = 3
+} = {}){
+  const r  = Math.max(8, Math.floor(vfxScale(radius)));
+  const lw = Math.max(1, Math.floor(vfxScale(lineW)));
+
+  const c = scene.add.container(0, 0);
+
+  // ring
+  const ring = scene.add.circle(0, 0, r, color, 0.06);
+  ring.setStrokeStyle(lw, color, 1);
+  ring.setAlpha(alpha);
+  ring.setBlendMode?.(Phaser.BlendModes.ADD);
+  c.add(ring);
+
+  // glyph
+  const g = scene.add.graphics();
+  g.lineStyle(lw, color, 1);
+  g.setAlpha(alpha);
+  g.setBlendMode?.(Phaser.BlendModes.ADD);
+
+  const rr = Math.floor(r * 0.72);
+  g.strokeLineShape(new Phaser.Geom.Line(0, -rr,  rr, rr));
+  g.strokeLineShape(new Phaser.Geom.Line(rr, rr, -rr, rr));
+  g.strokeLineShape(new Phaser.Geom.Line(-rr, rr, 0, -rr));
+  c.add(g);
+
+  // convenient refs
+  c._sigilParts = { ring, glyph: g, r, lw };
+  return c;
+}
+
+function vfxSigilTravel(caster, target, {
+  // timing
+  msHold   = 900,   // sit on caster (tiny) before travelling
+  msTravel = 420,   // flight time
+  msExpand = 260,   // pop to final size on impact
+  msLinger = 1250,  // how long it stays on target before fading
+  msFade   = 260,   // fade out duration
+
+  // appearance
+  color = 0x8a4dff,
+  alpha = 0.85,
+  radius = 18,
+  lineW = 3,
+  spin = true,
+  bad = false,
+
+  // scale behavior
+  startScale = 0.10,
+  holdScale  = 1.00,  // scale while holding at caster (relative to base)
+  finalScale = 1.15,  // peak scale on impact before settling
+  settleScale= 1.00,  // resting scale during linger
+
+  // optional label (usually OFF to avoid spam)
+  text = null,
+  textColor = null,
+
+  // depth
+  depth = 999999
+} = {}){
+  const scene = getScene?.();
+  if (!scene || !caster || !target) return;
+
+  const from = vfxWorldPos?.(caster);
+  const to   = vfxWorldPos?.(target);
+  if (!from || !to) return;
+
+  const hold   = vfxMs?.(msHold)   ?? msHold;
+  const travel = vfxMs?.(msTravel) ?? msTravel;
+  const expand = vfxMs?.(msExpand) ?? msExpand;
+  const linger = vfxMs?.(msLinger) ?? msLinger;
+  const fade   = vfxMs?.(msFade)   ?? msFade;
+
+  // create sigil at caster
+  const c = vfxBuildSigilNode(scene, { color, alpha, radius, lineW });
+  c.setDepth(vfxDepth?.(depth) ?? depth);
+  c.x = from.x; c.y = from.y;
+
+  // tiny start
+  c.setScale(Math.max(0.01, startScale));
+  c.setAlpha(1);
+
+  // entry punch while holding (grow from tiny to holdScale)
+  scene.tweens.add({
+    targets: c,
+    scale: Math.max(0.01, holdScale),
+    duration: Math.max(40, Math.floor(hold * 0.40)),
+    ease: 'Quad.easeOut'
+  });
+
+  // optional “bad” micro shake during hold
+  if (bad){
+    scene.tweens.add({
+      targets: c,
+      x: from.x + vfxScale(2),
+      duration: Math.max(40, Math.floor(hold * 0.18)),
+      yoyo: true,
+      repeat: 2,
+      ease: 'Sine.easeInOut'
+    });
+  }
+
+  // spin (continuous through all phases)
+  if (spin){
+    scene.tweens.add({
+      targets: c,
+      angle: 360,
+      duration: hold + travel + linger + fade + 200,
+      ease: 'Linear'
+    });
+  }
+
+  // After hold, travel to target
+  const doTravel = () => {
+    scene.tweens.add({
+      targets: c,
+      x: to.x,
+      y: to.y,
+      duration: Math.max(60, travel),
+      ease: 'Quad.easeInOut',
+      onComplete: () => {
+        // impact expand + settle
+        c.setScale(holdScale);
+
+        scene.tweens.add({
+          targets: c,
+          scale: Math.max(0.01, finalScale),
+          duration: Math.max(60, expand),
+          yoyo: true,
+          ease: 'Quad.easeOut',
+          onYoyo: () => c.setScale(Math.max(0.01, settleScale))
+        });
+
+        // linger, then fade + destroy
+        scene.time.delayedCall(Math.max(0, linger), () => {
+          scene.tweens.add({
+            targets: c,
+            alpha: 0,
+            duration: Math.max(60, fade),
+            ease: 'Sine.easeOut',
+            onComplete: () => vfxSafeDestroy?.(c) ?? c.destroy()
+          });
+        });
+
+        // optional label (usually keep OFF)
+        if (text){
+          try {
+            vfxFloatText?.(target, text, {
+              ms: vfxMs?.(Math.max(500, Math.floor(msLinger * 0.9))) ?? Math.max(500, Math.floor(msLinger * 0.9)),
+              fontSize: Math.floor(vfxScale?.(14) ?? 14),
+              color: (textColor || hexToCss(color))
+            });
+          } catch {}
+        }
+      }
+    });
+  };
+
+  scene.time.delayedCall(Math.max(0, hold), doTravel);
 }
 
 function vfxSigilStamp(target, {
@@ -3386,14 +3648,15 @@ if (key === 'magic_shield') {
 
 // ---------- AFFLICTION DEBUFFS (red sigil) ----------
 if (key === 'def_down' || key === 'marked') {
-  // Red sigil identity
-  vfxSigilStamp?.(u, {
-    ms: 650,
-    color: 0xff5d6c,
-    bad: true,
-    text: null,
-    spin: true
-  });
+  vfxSigilTravel?.(casterMaybeNullOrSelf, u, {
+  color: 0xff5d6c,
+  bad: true,
+  spin: true,
+  msHold: 700,
+  msTravel: 420,
+  msLinger: 1250,
+  text: null
+});
 
   // Clear “what happened” text for the two cases
   if (key === 'def_down') {
